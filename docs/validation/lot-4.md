@@ -40,7 +40,7 @@ est effectué couple coupé, avant tout armement.
 source tools/android-env.sh && ./gradlew --no-daemon :app:lintDebug
 ```
 
-Résultat : **37 tests JVM réussis**, lint debug réussi, APK debug construit.
+Résultat : **44 tests JVM réussis**, lint debug réussi, APK debug construit.
 La validation CH340/STS3215 reste à exécuter roues levées, avec arrêt d'urgence
 accessible.
 
@@ -51,4 +51,4 @@ coupure manuelle accessible. Le logiciel ne peut pas garantir l'immobilisation
 si Android ou l'alimentation disparaît brutalement après une commande.
 
 APK : `dist/balancing-robot-debug.apk`  
-SHA-256 : `a12293de7a382d550b4ee6d7ef4f62670faf7e0b7c5fe61870f0e90d213b9827`
+SHA-256 : `880c31a302c583865c04b4d1153762b313a26b90d135e3d1cb32c510719ac7d7`
