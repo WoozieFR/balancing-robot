@@ -601,11 +601,15 @@ Ordre de service à chaque réveil :
 
 `Sts3215Gateway` qualifie les deux IDs. `ready=true` seulement si les deux
 répondent. Une écriture de contrôle produit un unique paquet sync-write sur
-`Goal_Velocity` contenant les deux valeurs signées.
+`Goal_Velocity` contenant les deux valeurs signées en mode vitesse. En mode
+PWM, le paquet cible le registre 44 (`Goal_Time` dans la table générique,
+utilisé comme PWM en mode 2), avec signe bit 10 et magnitude 0..1000.
 
-Le mode vitesse et la limite de couple sont vérifiés désarmé. Aucune écriture
-persistante en EEPROM n'est automatique : si le mode doit être changé, une
-action distincte avec confirmation sera ajoutée ultérieurement.
+Le mode moteur (vitesse ou PWM), la limite active et la limite de couple sont
+vérifiés et appliqués désarmé. Le changement de mode désactive explicitement le
+couple avant l'écriture du registre `Operating Mode` (33). Le choix est
+persisté dans DataStore et exposé par l'IHM Android, la page web et le CSV de
+session.
 
 ## 11. Service Android
 

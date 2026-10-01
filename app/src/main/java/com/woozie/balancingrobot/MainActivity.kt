@@ -55,6 +55,7 @@ import androidx.core.content.FileProvider
 import androidx.lifecycle.lifecycleScope
 import com.woozie.balancingrobot.domain.control.pdStep
 import com.woozie.balancingrobot.domain.model.Axis
+import com.woozie.balancingrobot.domain.model.MotorControlMode
 import com.woozie.balancingrobot.domain.model.RobotConfig
 import com.woozie.balancingrobot.domain.sensor.ImuRatePolicy
 import com.woozie.balancingrobot.motor.AndroidUsbDeviceDetector
@@ -159,8 +160,8 @@ class MainActivity : ComponentActivity() {
                         onExportControlLog = ::exportControlLog,
                         onConnectMotors = { deviceId -> service?.connectMotors(deviceId) },
                         onDisconnectMotors = { service?.disconnectMotors() },
-                        onUpdateMotorConfig = { ids, signs, vmax, torqueLimit ->
-                            service?.updateMotorConfig(ids, signs, vmax, torqueLimit)
+                        onUpdateMotorConfig = { ids, signs, vmax, torqueLimit, controlMode, pwmMax ->
+                            service?.updateMotorConfig(ids, signs, vmax, torqueLimit, controlMode, pwmMax)
                         },
                         onConfigureMotors = { service?.configureMotors() },
                         onScanMotors = { deviceId -> service?.scanMotors(deviceId) },
@@ -334,7 +335,7 @@ private fun Lot2Screen(
     onExportControlLog: () -> Unit,
     onConnectMotors: (Int) -> Unit,
     onDisconnectMotors: () -> Unit,
-    onUpdateMotorConfig: (List<Int>, List<Int>, Int, Int) -> Unit,
+    onUpdateMotorConfig: (List<Int>, List<Int>, Int, Int, MotorControlMode, Int) -> Unit,
     onConfigureMotors: () -> Unit,
     onScanMotors: (Int) -> Unit,
     onArmManual: (Boolean) -> Unit,
@@ -594,7 +595,7 @@ private fun MotorDiagnosticCard(
     serviceRunning: Boolean,
     onConnectMotors: (Int) -> Unit,
     onDisconnectMotors: () -> Unit,
-    onUpdateMotorConfig: (List<Int>, List<Int>, Int, Int) -> Unit,
+    onUpdateMotorConfig: (List<Int>, List<Int>, Int, Int, MotorControlMode, Int) -> Unit,
     onConfigureMotors: () -> Unit,
     onExportMotorLog: () -> Unit,
     onScanMotors: (Int) -> Unit,
@@ -608,7 +609,12 @@ private fun MotorDiagnosticCard(
     var idsText by remember(state.requiredIds) { mutableStateOf(state.requiredIds.joinToString(",")) }
     var signsText by remember(state.motorSigns) { mutableStateOf(state.motorSigns.joinToString(",")) }
     var vmaxText by remember(state.vmax) { mutableStateOf(state.vmax.toString()) }
+    var pwmMaxText by remember(state.pwmMax) { mutableStateOf(state.pwmMax.toString()) }
     var torqueText by remember(state.torqueLimit) { mutableStateOf(state.torqueLimit.toString()) }
+    var controlMode by remember(state.controlMode) { mutableStateOf(state.controlMode) }
+    val modeEditable = state.armState != MotorArmState.MANUAL_ARMED &&
+        state.armState != MotorArmState.BALANCE_ARMED &&
+        state.armState != MotorArmState.FAULT_LATCHED
     Text("Moteurs manuels", style = MaterialTheme.typography.titleMedium)
     Spacer(Modifier.height(8.dp))
     Text(
@@ -618,7 +624,12 @@ private fun MotorDiagnosticCard(
     )
     Spacer(Modifier.height(8.dp))
     Text("Bus cible : CH340 · 1 000 000 bauds · STS3215", style = MaterialTheme.typography.bodySmall)
-    Text("IDs attendus : ${state.requiredIds.joinToString()} · Goal_Velocity · signes ${state.motorSigns.joinToString()}", style = MaterialTheme.typography.bodySmall)
+    Text(
+        "IDs attendus : ${state.requiredIds.joinToString()} · " +
+            "mode ${state.controlMode.label} · ${if (state.controlMode == MotorControlMode.PWM) "PWM goal 44" else "Goal_Velocity 46"} · " +
+            "signes ${state.motorSigns.joinToString()}",
+        style = MaterialTheme.typography.bodySmall,
+    )
     Text("État : ${state.armState.name} · commande ${state.manualCommand} · deadman ${if (state.deadmanHeld) "tenu" else "relâché"}", style = MaterialTheme.typography.bodySmall)
     Spacer(Modifier.height(8.dp))
     if (usbDevices.isEmpty()) {
@@ -665,17 +676,40 @@ private fun MotorDiagnosticCard(
     }
     SimulationField("IDs moteurs (ex. 6,7)", idsText) { idsText = it }
     SimulationField("Signes (ex. 1,1)", signsText) { signsText = it }
+    Text("Mode de commande", style = MaterialTheme.typography.bodySmall)
+    Row(horizontalArrangement = Arrangement.spacedBy(8.dp)) {
+        if (controlMode == MotorControlMode.VELOCITY) {
+            Button(onClick = { controlMode = MotorControlMode.VELOCITY }, enabled = modeEditable) {
+                Text("Vitesse")
+            }
+        } else {
+            OutlinedButton(onClick = { controlMode = MotorControlMode.VELOCITY }, enabled = modeEditable) {
+                Text("Vitesse")
+            }
+        }
+        if (controlMode == MotorControlMode.PWM) {
+            Button(onClick = { controlMode = MotorControlMode.PWM }, enabled = modeEditable) {
+                Text("PWM")
+            }
+        } else {
+            OutlinedButton(onClick = { controlMode = MotorControlMode.PWM }, enabled = modeEditable) {
+                Text("PWM")
+            }
+        }
+    }
     SimulationField("Vitesse max", vmaxText) { vmaxText = it }
+    SimulationField("PWM max (0..1000)", pwmMaxText) { pwmMaxText = it }
     SimulationField("Limite couple", torqueText) { torqueText = it }
     OutlinedButton(
         onClick = {
             val ids = idsText.split(',').mapNotNull { it.trim().toIntOrNull() }
             val signs = signsText.split(',').mapNotNull { it.trim().toIntOrNull() }
             val vmax = vmaxText.toIntOrNull() ?: -1
+            val pwmMax = pwmMaxText.toIntOrNull() ?: -1
             val torque = torqueText.toIntOrNull() ?: -1
-            onUpdateMotorConfig(ids, signs, vmax, torque)
+            onUpdateMotorConfig(ids, signs, vmax, torque, controlMode, pwmMax)
         },
-        enabled = state.armState != MotorArmState.MANUAL_ARMED,
+        enabled = modeEditable,
     ) {
         Text("Appliquer la configuration")
     }
@@ -684,10 +718,10 @@ private fun MotorDiagnosticCard(
         enabled = serviceRunning && state.connected && state.armState != MotorArmState.MANUAL_ARMED &&
             state.armState != MotorArmState.FAULT_LATCHED,
     ) {
-        Text(if (state.configured) "Reconfigurer le mode vitesse" else "Configurer le mode vitesse")
+        Text(if (state.configured) "Reconfigurer le mode ${state.controlMode.label}" else "Configurer le mode ${state.controlMode.label}")
     }
     Text(
-        "Configuration : ${if (state.configured) "mode vitesse prêt, couple coupé" else "non effectuée"} · " +
+        "Configuration : ${if (state.configured) "mode ${state.controlMode.label} prêt, couple coupé" else "non effectuée"} · " +
             if (state.scannedIds.isEmpty()) "IDs fournis explicitement, scan facultatif" else "IDs vérifiés par scan",
         style = MaterialTheme.typography.bodySmall,
     )

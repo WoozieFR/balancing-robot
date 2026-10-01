@@ -1,6 +1,7 @@
 package com.woozie.balancingrobot.motor
 
 import java.io.Closeable
+import com.woozie.balancingrobot.domain.model.MotorControlMode
 
 interface FeetechPort : Closeable {
     fun flush()
@@ -41,6 +42,16 @@ class FeetechBus(
         return port.write(packet, timeoutMs)
     }
 
+    fun writeSyncPwm(ids: List<Int>, values: List<Int>): Int {
+        require(values.all { it in -FeetechProtocol.PWM_MAX..FeetechProtocol.PWM_MAX }) {
+            "PWM value out of range"
+        }
+        val encoded = values.map { FeetechProtocol.encodeSignMagnitude(it, FeetechProtocol.PWM_SIGN_BIT) }
+        val packet = FeetechProtocol.buildSyncWrite(ids, FeetechProtocol.GOAL_PWM, 2, encoded)
+        port.flush()
+        return port.write(packet, timeoutMs)
+    }
+
     fun writeSyncTorqueEnable(ids: List<Int>, enabled: Boolean): Int =
         writeSyncUnsigned(ids, FeetechProtocol.TORQUE_ENABLE, 1, List(ids.size) { if (enabled) 1 else 0 })
 
@@ -52,9 +63,18 @@ class FeetechBus(
 
     /** Configure speed mode and torque limit while the group is disarmed. */
     fun configureVelocityMode(ids: List<Int>, torqueLimit: Int): Int {
+        return configureControlMode(ids, MotorControlMode.VELOCITY, torqueLimit)
+    }
+
+    /** Configure the STS3215 operating mode and torque limit while disarmed. */
+    fun configureControlMode(ids: List<Int>, mode: MotorControlMode, torqueLimit: Int): Int {
         require(torqueLimit in 0..1023) { "torque limit out of range" }
         var bytes = 0
-        bytes += writeSyncUnsigned(ids, FeetechProtocol.OPERATING_MODE, 1, List(ids.size) { 1 })
+        // Operating mode is an EEPROM field on STS3215; torque must be off
+        // before changing it. The caller is already in a disarmed state, but
+        // making the invariant explicit also protects direct bus users.
+        bytes += writeSyncTorqueEnable(ids, false)
+        bytes += writeSyncUnsigned(ids, FeetechProtocol.OPERATING_MODE, 1, List(ids.size) { mode.protocolValue })
         bytes += writeSyncUnsigned(ids, FeetechProtocol.TORQUE_LIMIT, 2, List(ids.size) { torqueLimit })
         return bytes
     }

@@ -31,6 +31,7 @@ object RobotConfigValidator {
                 error("kd", "must be finite and in [0, 2000]")
             }
             if (config.vmax !in 0..20_000) error("vmax", "must be in [0, 20000]")
+            if (config.pwmMax !in 0..1_000) error("pwmMax", "must be in [0, 1000]")
             if (config.motorIds.size != 2) error("motorIds", "exactly two motor IDs are required")
             if (config.motorIds.any { it !in 0..252 }) error("motorIds", "each ID must be in [0, 252]")
             if (config.motorIds.toSet().size != config.motorIds.size) error("motorIds", "IDs must be distinct")

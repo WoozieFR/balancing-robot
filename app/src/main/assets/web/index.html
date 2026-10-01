@@ -30,6 +30,14 @@
       <output id="zero-offset-value">0</output>
       <label>Vitesse maximale <input id="vmax" type="range" min="0" max="20000" step="1" value="6000"></label>
       <output id="vmax-value">6000</output>
+      <label>Mode moteurs
+        <select id="motor-control-mode">
+          <option value="VELOCITY">Vitesse (boucle fermée)</option>
+          <option value="PWM">PWM (boucle ouverte)</option>
+        </select>
+      </label>
+      <label>PWM maximum <input id="pwm-max" type="range" min="0" max="1000" step="1" value="1000"></label>
+      <output id="pwm-max-value">1000</output>
       <label>Limite de couple <input id="torque-limit" type="range" min="0" max="1023" step="1" value="1023"></label>
       <output id="torque-limit-value">1023</output>
       <label>Timeout IMU (ms) <input id="imu-timeout" type="range" min="20" max="1000" step="1" value="100"></label>

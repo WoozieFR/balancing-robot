@@ -7,13 +7,13 @@
 
 - codec Feetech pur : checksum, paquets, statut, sign-magnitude, lecture et
   `INST_SYNC_WRITE` ;
-- registres STS3215 et `FeetechBus` pour ping/scan, configuration vitesse/couple,
-  lecture vitesse/charge/tension/température et écriture synchronisée ;
+- registres STS3215 et `FeetechBus` pour ping/scan, configuration vitesse ou
+  PWM/couple, lecture vitesse/charge/tension/température et écriture synchronisée ;
 - transport Android `usb-serial-for-android` CH340 à 1 Mbit/s, ouvert uniquement
   sur action explicite ;
 - demande de permission USB depuis l'interface ;
 - onglet **Moteurs** avec connexion, scan explicite des IDs 1 à 20, IDs/signes,
-  limite de vitesse et limite de couple configurables désarmé ;
+  choix vitesse/PWM, limites vitesse/PWM et limite de couple configurables désarmé ;
 - groupe vérifié par scan si les deux IDs attendus répondent, avec possibilité
   d'utiliser explicitement des IDs connus sans scan ;
 - ordonnanceur I/O unique : dernière consigne, action urgente zéro/couple off,
@@ -27,6 +27,11 @@
 Le scan n'envoie que des `PING`. La configuration, l'activation du couple et
 l'armement restent des actions distinctes. Aucune écriture moteur n'est
 déclenchée au démarrage ou lors d'une reconnexion USB.
+
+Le mode vitesse écrit `Goal_Velocity` (registre 46) avec un signe en bit 15.
+Le mode PWM écrit la consigne signée sur le registre `Goal_Time`/PWM (44),
+avec un signe en bit 10 et une amplitude de 0 à 1000. Le changement de mode
+est effectué couple coupé, avant tout armement.
 
 ## Vérifications
 

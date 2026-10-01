@@ -21,8 +21,8 @@ const renderDiagnostics = (diagnostics) => {
   text('motor-command', `${diagnostics.motorCommand ?? '—'} · deadman ${diagnostics.motorDeadmanHeld ? 'tenu' : 'relâché'}`);
   text('motor-telemetry', `${diagnostics.motorTelemetryCount ?? 0} moteur(s) télémétrés`);
   const balanceArmed = diagnostics.motorArmState === 'BALANCE_ARMED';
-  ['axis', 'imu-sign', 'zero-offset', 'vmax', 'torque-limit', 'imu-timeout',
-    'fall-angle', 'fall-duration', 'manual-timeout'].forEach((id) => {
+  ['axis', 'imu-sign', 'zero-offset', 'vmax', 'motor-control-mode', 'pwm-max', 'torque-limit', 'imu-timeout',
+    'pwm-max', 'fall-angle', 'fall-duration', 'manual-timeout'].forEach((id) => {
     const input = document.getElementById(id);
     if (input) input.disabled = balanceArmed;
   });
@@ -32,7 +32,7 @@ const renderDiagnostics = (diagnostics) => {
   }
   [['imu-sign', diagnostics.imuSign], ['alpha', diagnostics.alpha], ['target', diagnostics.targetDeg],
     ['kp', diagnostics.kp], ['kd', diagnostics.kd], ['zero-offset', diagnostics.zeroOffsetDeg],
-    ['vmax', diagnostics.vmax], ['torque-limit', diagnostics.torqueLimit],
+    ['vmax', diagnostics.vmax], ['pwm-max', diagnostics.pwmMax], ['torque-limit', diagnostics.torqueLimit],
     ['imu-timeout', diagnostics.imuTimeoutMs], ['fall-angle', diagnostics.fallAngleDeg],
     ['fall-duration', diagnostics.fallDurationMs], ['manual-timeout', diagnostics.manualTimeoutMs]].forEach(([id, value]) => {
     if (value === undefined || value === null) return;
@@ -41,6 +41,8 @@ const renderDiagnostics = (diagnostics) => {
     if (input && document.activeElement !== input) input.value = value;
     if (output) output.textContent = id === 'imu-sign' ? (Number(value) > 0 ? '+1' : '-1') : Number(value).toFixed(2);
   });
+  const mode = document.getElementById('motor-control-mode');
+  if (mode && diagnostics.motorControlMode && document.activeElement !== mode) mode.value = diagnostics.motorControlMode;
 };
 
 const refresh = () => fetch('/diagnostics')
@@ -83,6 +85,8 @@ const currentParameters = () => ({
   kd: Number(document.getElementById('kd').value),
   zeroOffsetDeg: Number(document.getElementById('zero-offset').value),
   vmax: Number(document.getElementById('vmax').value),
+  motorControlMode: document.getElementById('motor-control-mode').value,
+  pwmMax: Number(document.getElementById('pwm-max').value),
   torqueLimit: Number(document.getElementById('torque-limit').value),
   imuTimeoutMs: Number(document.getElementById('imu-timeout').value),
   fallAngleDeg: Number(document.getElementById('fall-angle').value),
@@ -112,7 +116,7 @@ document.querySelectorAll('[data-command]').forEach((button) => {
   });
 });
 
-['imu-sign', 'alpha', 'target', 'kp', 'kd', 'zero-offset', 'vmax', 'torque-limit',
+['imu-sign', 'alpha', 'target', 'kp', 'kd', 'zero-offset', 'vmax', 'pwm-max', 'torque-limit',
   'imu-timeout', 'fall-angle', 'fall-duration', 'manual-timeout'].forEach((id) => {
   const input = document.getElementById(id);
   const output = document.getElementById(`${id}-value`);
@@ -122,6 +126,7 @@ document.querySelectorAll('[data-command]').forEach((button) => {
   });
 });
 document.getElementById('axis').addEventListener('change', scheduleParameterUpdate);
+document.getElementById('motor-control-mode').addEventListener('change', scheduleParameterUpdate);
 
 document.querySelectorAll('.hold-command').forEach((button) => {
   const value = Number(button.dataset.value);

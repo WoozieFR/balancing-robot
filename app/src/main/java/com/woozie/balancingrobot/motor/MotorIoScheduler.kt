@@ -6,6 +6,7 @@ import java.util.concurrent.Executors
 import java.util.concurrent.ScheduledExecutorService
 import java.util.concurrent.TimeUnit
 import java.util.concurrent.atomic.AtomicReference
+import com.woozie.balancingrobot.domain.model.MotorControlMode
 
 data class MotorFrame(
     val values: List<Int>,
@@ -28,7 +29,8 @@ class MotorIoScheduler(
     private val bus: FeetechBus,
     private val motorIds: List<Int>,
     private val motorSigns: List<Int>,
-    private val vmax: Int,
+    private val controlMode: MotorControlMode,
+    private val commandLimit: Int,
     private val manualTimeoutMs: Long = 300,
     private val onTelemetry: (List<FeetechTelemetry>) -> Unit,
     private val onFault: (String) -> Unit,
@@ -53,7 +55,7 @@ class MotorIoScheduler(
         if (executor.isShutdown) return false
         val future = executor.submit<Boolean> {
             runCatching {
-                bus.writeSyncVelocity(motorIds, List(motorIds.size) { 0 })
+                writeControl(List(motorIds.size) { 0 })
                 bus.writeSyncTorqueEnable(motorIds, true)
                 armed = true
                 latestControlFrame.set(null)
@@ -73,14 +75,14 @@ class MotorIoScheduler(
         armed = false
         urgentActions += {
             runCatching {
-                bus.writeSyncVelocity(motorIds, List(motorIds.size) { 0 })
+                writeControl(List(motorIds.size) { 0 })
                 bus.writeSyncTorqueEnable(motorIds, false)
             }.onFailure { onFault("Désarmement moteur incomplet : ${it.message ?: it.javaClass.simpleName}") }
         }
     }
 
     fun submitManual(value: Int, held: Boolean) {
-        val bounded = value.coerceIn(-vmax, vmax)
+        val bounded = value.coerceIn(-commandLimit, commandLimit)
         if (!armed || !held) {
             latestControlFrame.set(MotorFrame(List(motorIds.size) { 0 }))
             return
@@ -95,7 +97,7 @@ class MotorIoScheduler(
             latestControlFrame.set(MotorFrame(List(motorIds.size) { 0 }))
             return
         }
-        latestControlFrame.set(MotorFrame(values.map { it.coerceIn(-vmax, vmax) }))
+        latestControlFrame.set(MotorFrame(values.map { it.coerceIn(-commandLimit, commandLimit) }))
     }
 
     fun safetyStop() = disarm()
@@ -120,12 +122,12 @@ class MotorIoScheduler(
                 System.nanoTime() - frame.timestampNs <= manualTimeoutMs * 1_000_000L
             ) frame.values else List(motorIds.size) { 0 }
             val started = System.nanoTime()
-            runCatching { bus.writeSyncVelocity(motorIds, output) }
+            runCatching { writeControl(output) }
                 .onSuccess {
                     writtenFrames++
                     lastWriteLatencyMs = (System.nanoTime() - started) / 1_000_000.0
                 }
-                .onFailure { onFault("Écriture vitesse impossible : ${it.message ?: it.javaClass.simpleName}") }
+                .onFailure { onFault("Écriture ${controlMode.label} impossible : ${it.message ?: it.javaClass.simpleName}") }
             if (frame != null && frame.timestampNs != latestControlFrame.get()?.timestampNs) {
                 supersededFrames++
             }
@@ -146,6 +148,11 @@ class MotorIoScheduler(
                 onFault("Moteur attendu silencieux : arrêt du groupe")
             }
         }
+    }
+
+    private fun writeControl(values: List<Int>): Int = when (controlMode) {
+        MotorControlMode.VELOCITY -> bus.writeSyncVelocity(motorIds, values)
+        MotorControlMode.PWM -> bus.writeSyncPwm(motorIds, values)
     }
 
     override fun close() {

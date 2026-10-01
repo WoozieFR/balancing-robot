@@ -13,6 +13,12 @@ enum class Preset { SENSORS, FILTER, MANUAL_MOTORS, PD_SIMULATION, BALANCE }
 
 enum class Axis { X, Y, Z }
 
+/** STS3215 motor command mode. The mode is written to Operating Mode (33). */
+enum class MotorControlMode(val protocolValue: Int, val label: String) {
+    VELOCITY(1, "vitesse"),
+    PWM(2, "PWM"),
+}
+
 enum class SensorKind { ACCEL, GYRO }
 
 enum class FaultCode {
@@ -73,6 +79,8 @@ data class RobotConfig(
     val kp: Double = 0.0,
     val kd: Double = 0.0,
     val vmax: Int = 6000,
+    val motorControlMode: MotorControlMode = MotorControlMode.VELOCITY,
+    val pwmMax: Int = 1000,
     val motorIds: List<Int> = listOf(6, 7),
     val motorSigns: List<Int> = listOf(1, 1),
     val baudRate: Int = 1_000_000,
@@ -83,4 +91,8 @@ data class RobotConfig(
     val manualTimeoutMs: Long = 300,
     val logCapacity: Int = 200_000,
     val webPort: Int = 8766,
-)
+) {
+    /** Output unit and limit used by both the PD loop and the motor scheduler. */
+    val commandLimit: Int
+        get() = if (motorControlMode == MotorControlMode.PWM) pwmMax else vmax
+}

@@ -300,6 +300,8 @@ Règles :
 | Kp | 0 | 0 à 2000 | Oui | Oui |
 | Kd | 0 | 0 à 2000 | Oui | Oui |
 | Vmax | 6000 | 0 à 20000 | Oui | Non |
+| Mode moteur | vitesse | vitesse ou PWM | Oui | Non |
+| PWM max | 1000 | 0 à 1000 | Oui | Non |
 | IDs moteurs | 6,7 | entiers distincts 0 à 252 | Oui | Non |
 | Signes moteurs | +1,+1 | un signe par ID | Oui | Non |
 | Débit série | 1 000 000 | fixe en V1 | Oui | Non |
@@ -331,10 +333,16 @@ Le composant USB suit les états `DETACHED`, `PERMISSION_REQUIRED`, `OPENING`,
 La configuration d'un moteur suit cet ordre, uniquement désarmé :
 
 1. identifier l'ID ;
-2. vérifier le mode vitesse ;
+2. sélectionner et vérifier le mode vitesse ou PWM ;
 3. appliquer la limite de couple demandée ;
 4. vérifier que la consigne vaut zéro ;
 5. laisser le couple désactivé jusqu'à l'armement.
+
+Pour un STS3215, le mode vitesse écrit `Goal_Velocity` (registre 46, signe en
+bit 15). Le mode PWM écrit le registre 44 (`Goal_Time` dans la table générique,
+utilisé comme consigne PWM en mode 2), avec signe en bit 10 et magnitude
+comprise entre 0 et 1000. Le mode 2 est une commande en boucle ouverte : la
+vitesse réelle dépend de la charge et de la tension moteur.
 
 La modification automatique d'un registre persistant du servo doit être
 signalée séparément et ne fait pas partie d'un simple démarrage de session.
@@ -700,4 +708,3 @@ La validation de cette spécification confirme notamment :
 6. le catalogue de défauts et leur procédure de récupération ;
 7. les cadences et seuils de qualification ;
 8. le schéma logique du journal CSV.
-

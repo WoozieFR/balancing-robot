@@ -21,8 +21,10 @@ Compose, export CSV, protocole de diagnostic et page web miroir via
 Le Lot 4 ajoute le codec Feetech, le transport USB CH340, la demande de
 permission, le scan/qualification du groupe, la télémétrie, l'ordonnanceur I/O,
 la configuration, l'armement manuel, le deadman, les paliers et le journal
-moteur. Le scan n'envoie que des `PING` ; le couple et les commandes ne sont
-activés qu'après configuration, confirmation roues levées et armement explicite.
+moteur. Le choix de mode STS3215 vitesse/PWM est disponible dans l'onglet
+**Moteurs** et sur la page web. Le scan n'envoie que des `PING` ; le couple et
+les commandes ne sont activés qu'après configuration, confirmation roues
+levées et armement explicite.
 
 Le Lot 5 raccorde l'estimation et le PD à l'ordonnanceur moteur sous un état
 `BALANCE_ARMED` séparé. Il ajoute le watchdog de fraîcheur IMU, la détection de

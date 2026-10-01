@@ -48,6 +48,23 @@ class FeetechProtocolTest {
     }
 
     @Test
+    fun pwmUsesGoalTimeRegisterAndTenBitSignMagnitude() {
+        val frame = FeetechProtocol.buildSyncWrite(
+            ids = listOf(6, 7),
+            address = FeetechProtocol.GOAL_PWM,
+            valueLength = 2,
+            values = listOf(
+                FeetechProtocol.encodeSignMagnitude(100, FeetechProtocol.PWM_SIGN_BIT),
+                FeetechProtocol.encodeSignMagnitude(-100, FeetechProtocol.PWM_SIGN_BIT),
+            ),
+        )
+
+        assertEquals(FeetechProtocol.GOAL_PWM, frame[5].toInt() and 0xFF)
+        assertEquals(100, littleEndianValue(frame.copyOfRange(8, 10)))
+        assertEquals(100 or (1 shl FeetechProtocol.PWM_SIGN_BIT), littleEndianValue(frame.copyOfRange(11, 13)))
+    }
+
+    @Test
     fun readsPackedSts3215Telemetry() {
         val response = FeetechProtocol.buildPacket(
             servoId = 6,

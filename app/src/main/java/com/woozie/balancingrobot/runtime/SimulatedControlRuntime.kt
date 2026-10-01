@@ -49,7 +49,7 @@ class SimulatedControlRuntime(initialConfig: RobotConfig) {
             ?: return SimulationStep(null, null, FaultCode.ESTIMATE_INVALID)
         val estimate = Estimate(accelAngleDeg, angle, gyroRateDegPerSec, dtSec)
         val base = try {
-            pdStep(config.targetDeg, angle, gyroRateDegPerSec, config.kp, config.kd, config.vmax)
+            pdStep(config.targetDeg, angle, gyroRateDegPerSec, config.kp, config.kd, config.commandLimit)
         } catch (_: IllegalArgumentException) {
             return SimulationStep(estimate, null, FaultCode.ESTIMATE_INVALID)
         }

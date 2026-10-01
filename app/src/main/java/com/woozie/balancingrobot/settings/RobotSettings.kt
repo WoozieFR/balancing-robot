@@ -8,6 +8,7 @@ import androidx.datastore.preferences.core.stringPreferencesKey
 import androidx.datastore.preferences.preferencesDataStore
 import com.woozie.balancingrobot.domain.sensor.ImuRatePolicy
 import com.woozie.balancingrobot.domain.model.Axis
+import com.woozie.balancingrobot.domain.model.MotorControlMode
 import com.woozie.balancingrobot.domain.model.RobotConfig
 import com.woozie.balancingrobot.domain.model.RobotConfigValidator
 import kotlinx.coroutines.flow.Flow
@@ -32,6 +33,8 @@ object RobotSettings {
     private val kpKey = doublePreferencesKey("kp")
     private val kdKey = doublePreferencesKey("kd")
     private val vmaxKey = intPreferencesKey("vmax")
+    private val motorControlModeKey = stringPreferencesKey("motor_control_mode")
+    private val pwmMaxKey = intPreferencesKey("pwm_max")
     private val motorIdsKey = stringPreferencesKey("motor_ids")
     private val motorSignsKey = stringPreferencesKey("motor_signs")
     private val torqueLimitKey = intPreferencesKey("torque_limit")
@@ -97,6 +100,10 @@ object RobotSettings {
             kp = preferences[kpKey] ?: defaults.kp,
             kd = preferences[kdKey] ?: defaults.kd,
             vmax = preferences[vmaxKey] ?: defaults.vmax,
+            motorControlMode = runCatching {
+                MotorControlMode.valueOf(preferences[motorControlModeKey] ?: defaults.motorControlMode.name)
+            }.getOrDefault(defaults.motorControlMode),
+            pwmMax = preferences[pwmMaxKey] ?: defaults.pwmMax,
             motorIds = ids,
             motorSigns = signs,
             torqueLimit = preferences[torqueLimitKey] ?: defaults.torqueLimit,
@@ -119,6 +126,8 @@ object RobotSettings {
             preferences[kpKey] = config.kp
             preferences[kdKey] = config.kd
             preferences[vmaxKey] = config.vmax
+            preferences[motorControlModeKey] = config.motorControlMode.name
+            preferences[pwmMaxKey] = config.pwmMax
             preferences[motorIdsKey] = config.motorIds.joinToString(",")
             preferences[motorSignsKey] = config.motorSigns.joinToString(",")
             preferences[torqueLimitKey] = config.torqueLimit

@@ -73,7 +73,7 @@ class ControlSessionLog(private val capacity: Int = 100_000) {
             "timestamp_ns,received_timestamp_ns,accel_x_mps2,accel_y_mps2,accel_z_mps2," +
                 "gyro_x_dps,gyro_y_dps,gyro_z_dps,accel_angle_deg,estimated_angle_deg," +
                 "gyro_rate_dps,dt_s,schema_version,axis,imu_sign,zero_offset_deg,alpha,target_deg,kp,kd," +
-                "vmax,motor_id_0,motor_id_1,motor_sign_0,motor_sign_1,baud_rate,torque_limit," +
+                "vmax,motor_control_mode,pwm_max,command_limit,motor_id_0,motor_id_1,motor_sign_0,motor_sign_1,baud_rate,torque_limit," +
                 "imu_timeout_ms,fall_angle_deg,fall_duration_ms,manual_timeout_ms,log_capacity," +
                 "web_port,error_deg,raw_command,bounded_command,saturated,motor_command_0," +
                 "motor_command_1,control_latency_ms,arm_state,sample_status",
@@ -101,6 +101,9 @@ class ControlSessionLog(private val capacity: Int = 100_000) {
                 .append(config.kp).append(',')
                 .append(config.kd).append(',')
                 .append(config.vmax).append(',')
+                .append(config.motorControlMode.name).append(',')
+                .append(config.pwmMax).append(',')
+                .append(config.commandLimit).append(',')
                 .append(config.motorIds.getOrNull(0) ?: "").append(',')
                 .append(config.motorIds.getOrNull(1) ?: "").append(',')
                 .append(config.motorSigns.getOrNull(0) ?: "").append(',')

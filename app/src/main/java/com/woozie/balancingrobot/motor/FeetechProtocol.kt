@@ -15,8 +15,14 @@ object FeetechProtocol {
     const val INST_SYNC_WRITE = 0x83
 
     const val OPERATING_MODE = 33
+    const val MODE_VELOCITY = 1
+    const val MODE_PWM = 2
     const val TORQUE_ENABLE = 40
+    /** In STS3215 PWM mode this is the signed PWM duty command (0..1000). */
+    const val GOAL_PWM = 44
     const val GOAL_VELOCITY = 46
+    const val PWM_SIGN_BIT = 10
+    const val PWM_MAX = (1 shl PWM_SIGN_BIT) - 1
     const val TORQUE_LIMIT = 48
     const val PRESENT_POSITION = 56
     const val PRESENT_VELOCITY = 58

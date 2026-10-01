@@ -10,7 +10,8 @@
   sécurité ;
 - watchdog de fraîcheur gyro/IMU, dépassement d'angle et durée de chute ;
 - arrêt sûr avec consigne nulle et désactivation du couple en cas de défaut ;
-- bornage par `vmax`, signes moteurs, timeout de commande et mesure de latence ;
+- bornage par la limite du mode sélectionné (`vmax` en vitesse ou `pwmMax` en
+  PWM), signes moteurs, timeout de commande et mesure de latence ;
 - configuration robot validée et persistée dans DataStore ;
 - onglet Android **Réglages** avec curseurs pour tous les paramètres de la
   boucle : axe/signe, offset zéro, alpha du filtre complémentaire, cible, Kp,
@@ -23,6 +24,8 @@
   endpoint web `/control-log.csv` ;
 - commandes WebSocket `update_parameters`, `arm_balance` et `disarm_balance` ;
 - page web miroir avec curseurs alpha, cible, Kp/Kd, offset et angle de chute ;
+- choix du mode moteur vitesse/PWM dans Android et sur la page web, avec limite
+  PWM dédiée et exportée dans le journal de contrôle ;
 - application explicite des IDs connus sans scan obligatoire après changement
   des réglages moteur.
 

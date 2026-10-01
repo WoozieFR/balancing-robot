@@ -30,4 +30,12 @@ class RobotConfigValidatorTest {
 
         assertTrue(result.errors.any { it.field == "motorSigns" })
     }
+
+    @Test
+    fun pwmModeUsesThePwmLimitAsTheControlCommandLimit() {
+        val config = RobotConfig(motorControlMode = MotorControlMode.PWM, pwmMax = 700)
+
+        assertTrue(RobotConfigValidator.validate(config).isValid)
+        assertEquals(700, config.commandLimit)
+    }
 }

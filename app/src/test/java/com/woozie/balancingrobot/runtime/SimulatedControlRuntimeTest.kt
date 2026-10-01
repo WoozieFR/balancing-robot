@@ -1,6 +1,7 @@
 package com.woozie.balancingrobot.runtime
 
 import com.woozie.balancingrobot.domain.model.RobotConfig
+import com.woozie.balancingrobot.domain.model.MotorControlMode
 import com.woozie.balancingrobot.domain.model.Vector3
 import org.junit.Assert.assertEquals
 import org.junit.Assert.assertNotNull
@@ -10,6 +11,24 @@ import kotlin.math.sin
 import kotlin.math.cos
 
 class SimulatedControlRuntimeTest {
+    @Test
+    fun pwmModeBoundsThePdOutputToTheConfiguredDuty() {
+        val runtime = SimulatedControlRuntime(
+            RobotConfig(
+                targetDeg = 20.0,
+                kp = 100.0,
+                alpha = 1.0,
+                motorControlMode = MotorControlMode.PWM,
+                pwmMax = 250,
+            ),
+        )
+
+        val tenDegrees = Math.toRadians(10.0)
+        val step = runtime.step(Vector3(0.0, sin(tenDegrees), cos(tenDegrees)), 0.0, 0.01)
+
+        assertEquals(250, step.control!!.boundedCommand)
+    }
+
     @Test
     fun replaysAnImuStepWithoutTouchingAndroidOrUsb() {
         val runtime = SimulatedControlRuntime(

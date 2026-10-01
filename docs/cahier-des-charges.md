@@ -123,7 +123,7 @@ sortie de ce premier jalon.
 - sélection des axes, des signes et du zéro mécanique ;
 - mesure du temps réel entre événements ;
 - filtre complémentaire ;
-- correcteur PD en vitesse ;
+- correcteur PD avec sortie sélectionnable en vitesse ou PWM ;
 - communication USB avec l'adaptateur CH340 ;
 - protocole Feetech et commande de deux STS3215 ;
 - commande synchronisée des moteurs ;
@@ -259,7 +259,8 @@ L'application DOIT fournir au minimum les préréglages suivants :
 - **CTL-003 —** Les gains initiaux DOIVENT valoir zéro afin qu'une première
   ouverture de l'application ne produise aucune commande.
 - **CTL-004 —** La sortie calculée DOIT être saturée symétriquement. La limite
-  initiale de référence est `6000` unités `Goal_Velocity`.
+  initiale de référence est `6000` unités `Goal_Velocity` en mode vitesse et
+  `1000` unités PWM en mode PWM.
 - **CTL-005 —** Le calcul DOIT utiliser un événement gyro frais. Une vitesse
   absente ou invalide ne doit pas être silencieusement remplacée par zéro
   lorsque les moteurs sont armés.
@@ -289,16 +290,18 @@ La cible initiale est :
   CDC-ACM sans modifier la logique du protocole moteur.
 - **MOT-003 —** L'application DOIT identifier l'adaptateur détecté et afficher
   son VID, PID, type de pilote et débit configuré.
-- **MOT-004 —** Les commandes de vitesse des deux moteurs DOIVENT être envoyées
-  dans une seule écriture synchronisée Feetech lorsque les deux moteurs sont
-  actifs.
+- **MOT-004 —** Les commandes des deux moteurs DOIVENT être envoyées dans une
+  seule écriture synchronisée Feetech lorsque les deux moteurs sont actifs ;
+  l'adresse de consigne est `Goal_Velocity` (46) en mode vitesse et `Goal_Time`
+  / PWM (44) en mode PWM.
 - **MOT-005 —** Les signes doivent être appliqués individuellement après calcul
   de la commande commune.
 - **MOT-006 —** Le groupe moteur n'est opérationnel que si tous les moteurs
   attendus ont été identifiés. La présence d'un seul moteur sur deux constitue
   un défaut du groupe.
-- **MOT-007 —** Les IDs, signes, limite de vitesse et limite de couple DOIVENT
-  être configurables uniquement lorsque le système est désarmé.
+- **MOT-007 —** Les IDs, signes, mode vitesse/PWM, limites de vitesse/PWM et
+  limite de couple DOIVENT être configurables uniquement lorsque le système
+  est désarmé.
 - **MOT-008 —** Un scan du bus DOIT être interdit pendant l'armement. Avant tout
   scan, la commande doit être nulle et le couple désactivé.
 - **MOT-009 —** La télémétrie DOIT inclure au minimum présence, vitesse mesurée,
@@ -314,7 +317,7 @@ La cible initiale est :
 - **MAN-002 —** Une commande manuelle non nulle exige l'armement et une action
   maintenue par l'opérateur.
 - **MAN-003 —** La libération de la commande ou la perte de son rafraîchissement
-  DOIT demander une vitesse nulle.
+  DOIT demander une consigne nulle dans l'unité du mode actif (vitesse ou PWM).
 - **MAN-004 —** Une séquence d'essai reproductible DOIT permettre les paliers :
 
   ```text
@@ -609,4 +612,3 @@ conception ultérieure, sans bloquer la validation du présent besoin :
 - mise en œuvre des graphiques temps réel ;
 - seuils définitifs issus des mesures réelles ;
 - évolution future vers un accès distant sécurisé.
-

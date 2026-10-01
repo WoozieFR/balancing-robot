@@ -25,6 +25,7 @@ import com.woozie.balancingrobot.domain.logging.ControlLogRecord
 import com.woozie.balancingrobot.domain.logging.ControlSessionLog
 import com.woozie.balancingrobot.domain.metrics.SampleRateMeter
 import com.woozie.balancingrobot.domain.model.Axis
+import com.woozie.balancingrobot.domain.model.MotorControlMode
 import com.woozie.balancingrobot.domain.model.RobotConfig
 import com.woozie.balancingrobot.domain.model.RobotConfigValidator
 import com.woozie.balancingrobot.domain.model.Vector3
@@ -258,10 +259,18 @@ class RobotControlService : Service() {
         }
     }
 
-    fun updateMotorConfig(ids: List<Int>, signs: List<Int>, vmax: Int, torqueLimit: Int) {
+    fun updateMotorConfig(
+        ids: List<Int>,
+        signs: List<Int>,
+        vmax: Int,
+        torqueLimit: Int,
+        controlMode: MotorControlMode,
+        pwmMax: Int,
+    ) {
         val valid = ids.size == 2 && ids.distinct().size == ids.size &&
             ids.all { it in 1..FeetechProtocol.MAX_ID } && signs.size == ids.size &&
-            signs.all { it == -1 || it == 1 } && vmax in 0..32_767 && torqueLimit in 0..1_023
+            signs.all { it == -1 || it == 1 } && vmax in 0..20_000 &&
+            torqueLimit in 0..1_023 && pwmMax in 0..FeetechProtocol.PWM_MAX
         if (!valid) {
             _state.update { it.copy(motors = it.motors.copy(errorMessage = "Configuration moteur invalide")) }
             return
@@ -276,12 +285,16 @@ class RobotControlService : Service() {
             motorIds = ids,
             motorSigns = signs,
             vmax = vmax,
+            motorControlMode = controlMode,
+            pwmMax = pwmMax,
             torqueLimit = torqueLimit,
         )
         _state.update { it.copy(motors = it.motors.copy(
             requiredIds = ids,
             motorSigns = signs,
             vmax = vmax,
+            controlMode = controlMode,
+            pwmMax = pwmMax,
             torqueLimit = torqueLimit,
             scannedIds = emptyList(),
             qualified = false,
@@ -307,6 +320,8 @@ class RobotControlService : Service() {
             activeConfig.motorIds != config.motorIds ||
             activeConfig.motorSigns != config.motorSigns ||
             activeConfig.torqueLimit != config.torqueLimit ||
+            activeConfig.motorControlMode != config.motorControlMode ||
+            activeConfig.pwmMax != config.pwmMax ||
             activeConfig.imuTimeoutMs != config.imuTimeoutMs ||
             activeConfig.fallAngleDeg != config.fallAngleDeg ||
             activeConfig.fallDurationMs != config.fallDurationMs ||
@@ -328,6 +343,8 @@ class RobotControlService : Service() {
             activeConfig.motorSigns != config.motorSigns ||
             activeConfig.vmax != config.vmax ||
             activeConfig.torqueLimit != config.torqueLimit ||
+            activeConfig.motorControlMode != config.motorControlMode ||
+            activeConfig.pwmMax != config.pwmMax ||
             activeConfig.manualTimeoutMs != config.manualTimeoutMs
         if (motorConfigChanged) {
             // The I/O worker captures these limits at construction time. Stop
@@ -347,6 +364,8 @@ class RobotControlService : Service() {
                     requiredIds = config.motorIds,
                     motorSigns = config.motorSigns,
                     vmax = config.vmax,
+                    controlMode = config.motorControlMode,
+                    pwmMax = config.pwmMax,
                     torqueLimit = config.torqueLimit,
                     configured = false,
                     qualified = false,
@@ -506,7 +525,7 @@ class RobotControlService : Service() {
             motorScheduler?.close()
             motorScheduler = null
             val result = runCatching {
-                motorBus?.configureVelocityMode(current.requiredIds, current.torqueLimit)
+                motorBus?.configureControlMode(current.requiredIds, current.controlMode, current.torqueLimit)
                     ?: error("Bus moteur non connecté")
             }
             _state.update { state ->
@@ -515,7 +534,7 @@ class RobotControlService : Service() {
                     qualified = result.isSuccess,
                     armState = if (result.isSuccess) MotorArmState.READY else state.motors.armState,
                     lastAction = result.fold(
-                        { "Mode vitesse appliqué aux IDs ${current.requiredIds.joinToString()} · couple coupé" },
+                        { "Mode ${current.controlMode.label} appliqué aux IDs ${current.requiredIds.joinToString()} · couple coupé" },
                         { null },
                     ),
                     errorMessage = result.exceptionOrNull()?.let { "Configuration impossible : ${it.message}" },
@@ -575,7 +594,11 @@ class RobotControlService : Service() {
             motorScheduler?.submitManual(0, false)
             return
         }
-        val bounded = value.coerceIn(-_state.value.motors.vmax, _state.value.motors.vmax)
+        val limit = when (_state.value.motors.controlMode) {
+            MotorControlMode.VELOCITY -> _state.value.motors.vmax
+            MotorControlMode.PWM -> _state.value.motors.pwmMax
+        }
+        val bounded = value.coerceIn(-limit, limit)
         motorScheduler?.submitManual(bounded, held)
         _state.update { it.copy(motors = it.motors.copy(
             manualCommand = if (held) bounded else 0,
@@ -635,6 +658,14 @@ class RobotControlService : Service() {
             imu = ImuDiagnosticState(
                 requestedRateHz = imuRateHz,
                 status = "Initialisation des capteurs…",
+            ),
+            motors = MotorDiagnosticState(
+                requiredIds = config.motorIds,
+                motorSigns = config.motorSigns,
+                vmax = config.vmax,
+                controlMode = config.motorControlMode,
+                pwmMax = config.pwmMax,
+                torqueLimit = config.torqueLimit,
             ),
         )
         startImu(imuRateHz)
@@ -711,7 +742,8 @@ class RobotControlService : Service() {
             bus = bus,
             motorIds = _state.value.motors.requiredIds,
             motorSigns = _state.value.motors.motorSigns,
-            vmax = _state.value.motors.vmax,
+            controlMode = _state.value.motors.controlMode,
+            commandLimit = activeConfig.commandLimit,
             manualTimeoutMs = config.manualTimeoutMs,
             onTelemetry = ::onMotorTelemetry,
             onFault = ::onMotorFault,
@@ -1013,6 +1045,9 @@ class RobotControlService : Service() {
             put("kp", config.kp)
             put("kd", config.kd)
             put("vmax", config.vmax)
+            put("motorControlMode", config.motorControlMode.name)
+            put("pwmMax", config.pwmMax)
+            put("commandLimit", config.commandLimit)
             put("torqueLimit", config.torqueLimit)
             put("imuTimeoutMs", config.imuTimeoutMs)
             put("fallAngleDeg", config.fallAngleDeg)
@@ -1084,6 +1119,10 @@ class RobotControlService : Service() {
                     kd = WebProtocol.payloadDouble(command, "kd") ?: _state.value.config.kd,
                     zeroOffsetDeg = WebProtocol.payloadDouble(command, "zeroOffsetDeg") ?: _state.value.config.zeroOffsetDeg,
                     vmax = WebProtocol.payloadInt(command, "vmax") ?: _state.value.config.vmax,
+                    motorControlMode = WebProtocol.payloadString(command, "motorControlMode")
+                        ?.let { runCatching { MotorControlMode.valueOf(it) }.getOrNull() }
+                        ?: _state.value.config.motorControlMode,
+                    pwmMax = WebProtocol.payloadInt(command, "pwmMax") ?: _state.value.config.pwmMax,
                     torqueLimit = WebProtocol.payloadInt(command, "torqueLimit") ?: _state.value.config.torqueLimit,
                     imuTimeoutMs = (WebProtocol.payloadInt(command, "imuTimeoutMs") ?: _state.value.config.imuTimeoutMs.toInt()).toLong(),
                     fallAngleDeg = WebProtocol.payloadDouble(command, "fallAngleDeg") ?: _state.value.config.fallAngleDeg,
