@@ -51,4 +51,4 @@ coupure manuelle accessible. Le logiciel ne peut pas garantir l'immobilisation
 si Android ou l'alimentation disparaît brutalement après une commande.
 
 APK : `dist/balancing-robot-debug.apk`  
-SHA-256 : `880c31a302c583865c04b4d1153762b313a26b90d135e3d1cb32c510719ac7d7`
+SHA-256 : `cd2530100e5dc52d969c324f1089fda25f6b1d086216af5c6b47afaf409370af`

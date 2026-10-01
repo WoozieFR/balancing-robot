@@ -22,7 +22,8 @@ object FeetechProtocol {
     const val GOAL_PWM = 44
     const val GOAL_VELOCITY = 46
     const val PWM_SIGN_BIT = 10
-    const val PWM_MAX = (1 shl PWM_SIGN_BIT) - 1
+    /** STS3215 PWM magnitude is documented as 0..1000; bit 10 is the sign. */
+    const val PWM_MAX = 1000
     const val TORQUE_LIMIT = 48
     const val PRESENT_POSITION = 56
     const val PRESENT_VELOCITY = 58
