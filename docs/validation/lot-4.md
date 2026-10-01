@@ -1,0 +1,49 @@
+# Validation Lot 4 — USB, Feetech et moteurs manuels
+
+**Date :** 2026-10-01  
+**Statut :** implémentation logicielle complète ; caractérisation matérielle à exécuter
+
+## Livré
+
+- codec Feetech pur : checksum, paquets, statut, sign-magnitude, lecture et
+  `INST_SYNC_WRITE` ;
+- registres STS3215 et `FeetechBus` pour ping/scan, configuration vitesse/couple,
+  lecture vitesse/charge/tension/température et écriture synchronisée ;
+- transport Android `usb-serial-for-android` CH340 à 1 Mbit/s, ouvert uniquement
+  sur action explicite ;
+- demande de permission USB depuis l'interface ;
+- onglet **Moteurs** avec connexion, scan explicite des IDs 1 à 20, IDs/signes,
+  limite de vitesse et limite de couple configurables désarmé ;
+- groupe vérifié par scan si les deux IDs attendus répondent, avec possibilité
+  d'utiliser explicitement des IDs connus sans scan ;
+- ordonnanceur I/O unique : dernière consigne, action urgente zéro/couple off,
+  télémétrie à 20 Hz cible et détection d'un moteur silencieux ;
+- armement manuel explicite après confirmation roues levées, deadman renouvelé
+  toutes les 100 ms, désarmement et séquence de paliers `0/500/1000/2000/4000/6000` ;
+- journal CSV moteur (consigne, vitesse, charge, tension, température) ;
+- commandes WebSocket distantes correspondantes et endpoint `/motor-log.csv` ;
+- déconnexion USB convertie en défaut verrouillé et arrêt sûr.
+
+Le scan n'envoie que des `PING`. La configuration, l'activation du couple et
+l'armement restent des actions distinctes. Aucune écriture moteur n'est
+déclenchée au démarrage ou lors d'une reconnexion USB.
+
+## Vérifications
+
+```bash
+./tools/android-build-debug.sh
+source tools/android-env.sh && ./gradlew --no-daemon :app:lintDebug
+```
+
+Résultat : **37 tests JVM réussis**, lint debug réussi, APK debug construit.
+La validation CH340/STS3215 reste à exécuter roues levées, avec arrêt d'urgence
+accessible.
+
+## Reste avant validation matérielle
+
+Vérifier les IDs 6/7, les signes à faible consigne, puis les paliers avec
+coupure manuelle accessible. Le logiciel ne peut pas garantir l'immobilisation
+si Android ou l'alimentation disparaît brutalement après une commande.
+
+APK : `dist/balancing-robot-debug.apk`  
+SHA-256 : `a12293de7a382d550b4ee6d7ef4f62670faf7e0b7c5fe61870f0e90d213b9827`

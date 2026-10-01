@@ -1,0 +1,103 @@
+<!doctype html>
+<html lang="fr">
+<head>
+  <meta charset="utf-8">
+  <meta name="viewport" content="width=device-width,initial-scale=1">
+  <title>Balancing Robot — diagnostic</title>
+</head>
+<body>
+  <main>
+    <h1>Balancing Robot</h1>
+    <p>Diagnostic et commande distante. L'armement et le deadman restent explicites.</p>
+    <section aria-labelledby="status-title">
+      <h2 id="status-title">État</h2>
+      <p id="status">Connexion…</p>
+    </section>
+    <section aria-labelledby="tuning-title">
+      <h2 id="tuning-title">Réglages équilibrage</h2>
+      <label>Axe <select id="axis"><option value="X">X</option><option value="Y">Y</option><option value="Z">Z</option></select></label>
+      <label>Signe IMU <input id="imu-sign" type="range" min="-1" max="1" step="2" value="1"></label>
+      <output id="imu-sign-value">+1</output>
+      <label>Alpha <input id="alpha" type="range" min="0" max="1" step="0.01" value="0.98"></label>
+      <output id="alpha-value">0.98</output>
+      <label>Cible (°) <input id="target" type="range" min="-180" max="180" step="0.1" value="0"></label>
+      <output id="target-value">0</output>
+      <label>Kp <input id="kp" type="range" min="0" max="2000" step="1" value="0"></label>
+      <output id="kp-value">0</output>
+      <label>Kd <input id="kd" type="range" min="0" max="2000" step="1" value="0"></label>
+      <output id="kd-value">0</output>
+      <label>Offset zéro (°) <input id="zero-offset" type="range" min="-180" max="180" step="0.1" value="0"></label>
+      <output id="zero-offset-value">0</output>
+      <label>Vitesse maximale <input id="vmax" type="range" min="0" max="20000" step="1" value="6000"></label>
+      <output id="vmax-value">6000</output>
+      <label>Limite de couple <input id="torque-limit" type="range" min="0" max="1023" step="1" value="1023"></label>
+      <output id="torque-limit-value">1023</output>
+      <label>Timeout IMU (ms) <input id="imu-timeout" type="range" min="20" max="1000" step="1" value="100"></label>
+      <output id="imu-timeout-value">100</output>
+      <label>Angle de chute (°) <input id="fall-angle" type="range" min="5" max="90" step="0.1" value="35"></label>
+      <output id="fall-angle-value">35</output>
+      <label>Durée de chute (ms) <input id="fall-duration" type="range" min="20" max="1000" step="1" value="100"></label>
+      <output id="fall-duration-value">100</output>
+      <label>Timeout manuel (ms) <input id="manual-timeout" type="range" min="100" max="2000" step="1" value="300"></label>
+      <output id="manual-timeout-value">300</output>
+      <p>
+        <button data-command="arm_balance">Armer équilibrage</button>
+        <button data-command="disarm_balance">Désarmer équilibrage</button>
+      </p>
+    </section>
+    <section aria-labelledby="motor-title">
+      <h2 id="motor-title">Moteurs manuels</h2>
+      <label>Identifiant USB Android <input id="usb-device-id" type="number" min="0" value="0"></label>
+      <p>
+        <button data-command="connect_usb">Connecter USB</button>
+        <button data-command="scan_bus">Scanner</button>
+        <button data-command="configure_motors">Configurer vitesse</button>
+        <button data-command="disconnect_usb">Déconnecter</button>
+      </p>
+      <label><input id="safe-test" type="checkbox"> roues levées et coupure rapide disponible</label>
+      <p>
+        <button data-command="arm_manual">Armer manuel</button>
+        <button data-command="disarm">Désarmer</button>
+        <button data-command="step_sequence">Paliers</button>
+      </p>
+      <p>Maintenir un bouton enfoncé pour renouveler le deadman :</p>
+      <p>
+        <button class="hold-command" data-value="500">+500</button>
+        <button class="hold-command" data-value="1000">+1000</button>
+        <button class="hold-command" data-value="2000">+2000</button>
+        <button class="hold-command" data-value="-500">−500</button>
+        <button class="hold-command" data-value="-1000">−1000</button>
+        <button class="hold-command" data-value="-2000">−2000</button>
+      </p>
+      <dl>
+        <dt>État moteur</dt><dd id="motor-state">—</dd>
+        <dt>Commande / deadman</dt><dd id="motor-command">—</dd>
+        <dt>Télémétrie</dt><dd id="motor-telemetry">—</dd>
+      </dl>
+    </section>
+    <section aria-labelledby="imu-title">
+      <h2 id="imu-title">IMU</h2>
+      <dl>
+        <dt>Fréquence demandée</dt><dd id="requested-rate">—</dd>
+        <dt>Fréquence accel / gyro</dt><dd id="rates">—</dd>
+        <dt>Angle accel / filtré</dt><dd id="angles">—</dd>
+        <dt>dt</dt><dd id="dt">—</dd>
+        <dt>Jitter accel / gyro</dt><dd id="jitter">—</dd>
+        <dt>Échantillons acceptés / rejetés</dt><dd id="samples">—</dd>
+        <dt>Journal</dt><dd id="journal">—</dd>
+      </dl>
+      <p>
+        Session contrôle RAM : <span id="control-recording">arrêtée</span>
+        (<span id="control-recording-samples">0</span> échantillons)
+      </p>
+      <p>
+        <button id="start-recording">Démarrer capture</button>
+        <button id="stop-recording">Arrêter capture</button>
+        <a id="download-control-log" href="/control-log.csv" download="balancing-robot-control-session.csv">Télécharger CSV</a>
+      </p>
+    </section>
+    <pre id="log" aria-label="Journal de connexion"></pre>
+  </main>
+  <script src="/app.js"></script>
+</body>
+</html>
