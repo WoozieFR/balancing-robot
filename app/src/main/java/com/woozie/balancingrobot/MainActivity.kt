@@ -773,7 +773,11 @@ private fun MotorDiagnosticCard(
         onClick = onRunStepSequence,
         enabled = state.armState == MotorArmState.MANUAL_ARMED && !state.stepInProgress,
     ) {
-        Text(if (state.stepInProgress) "Paliers en cours…" else "Exécuter les paliers 0/500/1000/2000/4000/6000")
+        Text(
+            if (state.stepInProgress) "Paliers en cours…"
+            else if (state.controlMode == MotorControlMode.PWM) "Exécuter les paliers PWM 0/83/166/333/666/1000"
+            else "Exécuter les paliers 0/500/1000/2000/4000/6000",
+        )
     }
     OutlinedButton(onClick = onExportMotorLog, enabled = state.ioMetrics.telemetryFrames > 0) {
         Text("Exporter le journal moteurs CSV")

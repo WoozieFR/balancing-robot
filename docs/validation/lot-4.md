@@ -19,7 +19,9 @@
 - ordonnanceur I/O unique : dernière consigne, action urgente zéro/couple off,
   télémétrie à 20 Hz cible et détection d'un moteur silencieux ;
 - armement manuel explicite après confirmation roues levées, deadman renouvelé
-  toutes les 100 ms, désarmement et séquence de paliers `0/500/1000/2000/4000/6000` ;
+  toutes les 100 ms, désarmement et séquence de paliers proportionnelle à la
+  limite du mode (vitesse : `0/500/1000/2000/4000/6000`, PWM :
+  `0/83/166/333/666/1000`) ;
 - journal CSV moteur (consigne, vitesse, charge, tension, température) ;
 - commandes WebSocket distantes correspondantes et endpoint `/motor-log.csv` ;
 - déconnexion USB convertie en défaut verrouillé et arrêt sûr.

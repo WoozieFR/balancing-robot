@@ -609,7 +609,11 @@ class RobotControlService : Service() {
     fun runManualStepSequence() {
         if (_state.value.motors.armState != MotorArmState.MANUAL_ARMED) return
         serverScope.launch(Dispatchers.IO) {
-            val steps = listOf(0, 500, 0, 1000, 0, 2000, 0, 4000, 0, 6000, 0)
+            val limit = when (_state.value.motors.controlMode) {
+                MotorControlMode.VELOCITY -> _state.value.motors.vmax
+                MotorControlMode.PWM -> _state.value.motors.pwmMax
+            }
+            val steps = listOf(0, limit / 12, 0, limit / 6, 0, limit / 3, 0, (limit * 2) / 3, 0, limit, 0)
             _state.update { it.copy(motors = it.motors.copy(stepInProgress = true, lastAction = "Séquence de paliers en cours")) }
             for (value in steps) {
                 if (_state.value.motors.armState != MotorArmState.MANUAL_ARMED) break
