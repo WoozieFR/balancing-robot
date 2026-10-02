@@ -64,6 +64,11 @@ publication. L'APK debug livré est copié dans `dist/` avec son SHA-256.
    lectures télémétriques lentes ne doivent pas faire chuter la cadence du
    writer.
 
+La latence affichée dans la carte d'équilibrage reste la latence de calcul
+gyro → PD → remise au scheduler. La latence jusqu'au bus se calcule dans le CSV
+avec `motor_write_start_ns - control_submitted_ns` ; ces deux mesures ne doivent
+pas être confondues.
+
 La capacité à tenir durablement l'équilibre et les gains définitifs restent
 une phase de caractérisation mécanique ultérieure ; aucun armement automatique
 n'est autorisé.
