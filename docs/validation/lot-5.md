@@ -58,4 +58,4 @@ une phase de caractérisation mécanique ultérieure ; aucun armement automatiqu
 n'est autorisé.
 
 APK : `dist/balancing-robot-debug.apk`  
-SHA-256 : `ef56c4e18035102ff44a170c9e256c49aca049013ce9c8e538e89265765f64d1`
+SHA-256 : `f2d18087dda70995e6c4e719c05bf46e7b3df0b6a61843abcf4dcaee14b604a2`
