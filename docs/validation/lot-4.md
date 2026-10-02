@@ -17,7 +17,8 @@
 - groupe vérifié par scan si les deux IDs attendus répondent, avec possibilité
   d'utiliser explicitement des IDs connus sans scan ;
 - ordonnanceur I/O unique : dernière consigne, action urgente zéro/couple off,
-  télémétrie à 20 Hz cible et détection d'un moteur silencieux ;
+  télémétrie à 20 Hz cible et détection d'un moteur silencieux après trois
+  cycles consécutifs manqués (une perte ponctuelle est tolérée) ;
 - armement manuel explicite après confirmation roues levées, deadman renouvelé
   toutes les 100 ms, désarmement et séquence de paliers proportionnelle à la
   limite du mode (vitesse : `0/500/1000/2000/4000/6000`, PWM :

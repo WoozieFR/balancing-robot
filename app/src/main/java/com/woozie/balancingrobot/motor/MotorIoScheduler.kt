@@ -35,6 +35,13 @@ class MotorIoScheduler(
     private val onTelemetry: (List<FeetechTelemetry>) -> Unit,
     private val onFault: (String) -> Unit,
 ) : Closeable {
+    companion object {
+        // USB/TTL reads can occasionally time out while a sync-write is in
+        // flight. One missed frame is not enough evidence that a servo has
+        // disappeared; three consecutive frames still stop the group quickly.
+        private const val TELEMETRY_FAILURE_LIMIT = 3
+    }
+
     private val executor: ScheduledExecutorService = Executors.newSingleThreadScheduledExecutor { runnable ->
         Thread(runnable, "robot-motor-io").apply { isDaemon = true }
     }
@@ -45,6 +52,7 @@ class MotorIoScheduler(
     private var writtenFrames = 0L
     private var supersededFrames = 0L
     private var telemetryFrames = 0L
+    private var consecutiveTelemetryFailures = 0
     private var lastWriteLatencyMs: Double? = null
 
     fun start() {
@@ -58,6 +66,7 @@ class MotorIoScheduler(
                 writeControl(List(motorIds.size) { 0 })
                 bus.writeSyncTorqueEnable(motorIds, true)
                 armed = true
+                consecutiveTelemetryFailures = 0
                 latestControlFrame.set(null)
                 true
             }.getOrElse {
@@ -73,6 +82,7 @@ class MotorIoScheduler(
         if (executor.isShutdown) return
         latestControlFrame.set(null)
         armed = false
+        consecutiveTelemetryFailures = 0
         urgentActions += {
             runCatching {
                 writeControl(List(motorIds.size) { 0 })
@@ -137,15 +147,22 @@ class MotorIoScheduler(
         if (now - lastTelemetryNs >= 50_000_000L) {
             lastTelemetryNs = now
             val values = motorIds.map { id ->
-                runCatching { bus.readTelemetry(id) }
-                    .onFailure { onFault("Télémétrie moteur $id impossible : ${it.message}") }
-                    .getOrNull()
+                runCatching { bus.readTelemetry(id) }.getOrNull()
             }
             if (values.all { it != null }) {
+                consecutiveTelemetryFailures = 0
                 telemetryFrames++
                 onTelemetry(values.filterNotNull())
             } else if (armed) {
-                onFault("Moteur attendu silencieux : arrêt du groupe")
+                consecutiveTelemetryFailures++
+                if (consecutiveTelemetryFailures >= TELEMETRY_FAILURE_LIMIT) {
+                    onFault(
+                        "Moteur attendu silencieux : arrêt du groupe " +
+                            "(${consecutiveTelemetryFailures} cycles de télémétrie manqués)",
+                    )
+                }
+            } else {
+                consecutiveTelemetryFailures = 0
             }
         }
     }

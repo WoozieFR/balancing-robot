@@ -372,6 +372,10 @@ La priorité du bus est :
 4. télémétrie ;
 5. scan.
 
+Une absence de réponse télémétrie ponctuelle ne déclenche pas seule un défaut
+moteur : le garde-fou attend trois cycles consécutifs manqués avant de couper le
+groupe. Une réponse complète réinitialise ce compteur.
+
 ## 13. Commande manuelle
 
 La commande manuelle est disponible uniquement avec le préréglage Moteurs
