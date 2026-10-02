@@ -1,6 +1,8 @@
 package com.woozie.balancingrobot.motor
 
 import java.io.Closeable
+import kotlin.math.max
+import kotlin.math.min
 import com.woozie.balancingrobot.domain.model.MotorControlMode
 
 interface FeetechPort : Closeable {
@@ -79,10 +81,10 @@ class FeetechBus(
         return bytes
     }
 
-    fun readTelemetry(servoId: Int): FeetechTelemetry? {
+    fun readTelemetry(servoId: Int, transactionTimeoutMs: Int = timeoutMs): FeetechTelemetry? {
         // PRESENT_VELOCITY..PRESENT_TEMPERATURE are contiguous on STS3215:
         // velocity (2), load (2), voltage (1), temperature (1).
-        val response = readRegister(servoId, FeetechProtocol.PRESENT_VELOCITY, 6) ?: return null
+        val response = readRegister(servoId, FeetechProtocol.PRESENT_VELOCITY, 6, transactionTimeoutMs) ?: return null
         if (response.parameters.size < 6) return null
         val velocity = FeetechProtocol.decodeSignMagnitude(littleEndianValue(response.parameters.copyOfRange(0, 2)))
         val load = FeetechProtocol.decodeSignMagnitude(
@@ -94,8 +96,14 @@ class FeetechBus(
         return FeetechTelemetry(servoId, velocity, load, voltage, temperature)
     }
 
-    fun readRegister(servoId: Int, address: Int, length: Int): FeetechStatusPacket? {
+    fun readRegister(
+        servoId: Int,
+        address: Int,
+        length: Int,
+        transactionTimeoutMs: Int = timeoutMs,
+    ): FeetechStatusPacket? {
         require(address in 0..255 && length in 1..251) { "invalid register read" }
+        require(transactionTimeoutMs > 0) { "transaction timeout must be positive" }
         return transact(
             FeetechProtocol.buildPacket(
                 servoId,
@@ -103,16 +111,22 @@ class FeetechBus(
                 byteArrayOf(address.toByte(), length.toByte()),
             ),
             servoId,
+            transactionTimeoutMs,
         )
     }
 
-    private fun transact(request: ByteArray, expectedId: Int): FeetechStatusPacket? {
+    private fun transact(
+        request: ByteArray,
+        expectedId: Int,
+        transactionTimeoutMs: Int = timeoutMs,
+    ): FeetechStatusPacket? {
         port.flush()
-        port.write(request, timeoutMs)
-        val deadline = System.nanoTime() + timeoutMs * 1_000_000L
+        port.write(request, transactionTimeoutMs)
+        val deadline = System.nanoTime() + transactionTimeoutMs * 1_000_000L
         var buffer = ByteArray(0)
         while (System.nanoTime() < deadline) {
-            val chunk = port.read(64, timeoutMs)
+            val remainingMs = max(1, ((deadline - System.nanoTime()) / 1_000_000L).toInt())
+            val chunk = port.read(64, min(timeoutMs, remainingMs))
             if (chunk.isNotEmpty()) buffer += chunk
             val response = FeetechProtocol.parseStatus(buffer)
             if (response != null && (response.servoId == expectedId || response.servoId == FeetechProtocol.BROADCAST_ID)) {

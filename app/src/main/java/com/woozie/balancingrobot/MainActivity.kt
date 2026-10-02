@@ -783,8 +783,10 @@ private fun MotorDiagnosticCard(
         Text("Exporter le journal moteurs CSV")
     }
     Text(
-        "I/O : ${state.ioMetrics.writtenFrames} écritures · ${state.ioMetrics.telemetryFrames} télémétries · " +
-            "${state.ioMetrics.supersededFrames} commandes remplacées",
+        "I/O : ${state.ioMetrics.writtenFrames} écritures (cible 200 Hz) · " +
+            "${state.ioMetrics.telemetryFrames} télémétries · " +
+            "${state.ioMetrics.supersededFrames} commandes remplacées · " +
+            "${state.ioMetrics.busBusySkips} créneaux occupés",
         style = MaterialTheme.typography.bodySmall,
     )
     state.telemetry.forEach { telemetry ->

@@ -583,11 +583,19 @@ session_ns,wall_time,event,sensor_ts_ns,
 ax,ay,az,gx,gy,gz,accel_angle_deg,estimated_angle_deg,gyro_rate_dps,dt_s,
 target_deg,error_deg,kp,kd,raw_cmd,bounded_cmd,
 motor_id,motor_cmd,measured_speed,load,voltage,temperature,
+control_sequence,control_submitted_ns,motor_write_start_ns,motor_write_end_ns,
 service_state,arm_state,preset,fault_code,source
 ```
 
 Les colonnes non applicables à un événement restent vides. L'export réalise une
 copie cohérente du tampon et ne le bloque pas pendant toute la conversion.
+
+Le fichier moteur `/motor-log.csv` renseigne `motor_cmd` avec la valeur de la
+dernière trame effectivement écrite au bus, et non avec la commande manuelle
+affichée. Les quatre colonnes de traçabilité associent cette mesure à la
+séquence de contrôle et aux timestamps monotoniques de remise au transport
+USB. La télémétrie est volontairement découplée de la boucle d'écriture afin
+qu'un timeout de lecture ne masque pas la cadence réelle de sortie.
 
 ## 21. Persistance et redémarrage
 

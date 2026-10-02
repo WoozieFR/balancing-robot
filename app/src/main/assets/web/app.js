@@ -19,7 +19,10 @@ const renderDiagnostics = (diagnostics) => {
   document.getElementById('stop-recording').disabled = !diagnostics.controlRecording;
   text('motor-state', `${diagnostics.motorArmState ?? '—'} · ${diagnostics.motorConnected ? 'USB connecté' : 'USB arrêté'} · ${diagnostics.motorQualified ? 'groupe qualifié' : 'groupe non qualifié'}`);
   text('motor-command', `${diagnostics.motorCommand ?? '—'} · deadman ${diagnostics.motorDeadmanHeld ? 'tenu' : 'relâché'}`);
-  text('motor-telemetry', `${diagnostics.motorTelemetryCount ?? 0} moteur(s) télémétrés`);
+  text('motor-telemetry', `${diagnostics.motorTelemetryCount ?? 0} moteur(s) télémétrés · ` +
+    `${diagnostics.motorWrittenFrames ?? 0} écritures · ` +
+    `${diagnostics.motorSupersededFrames ?? 0} remplacées · ` +
+    `${diagnostics.motorBusBusySkips ?? 0} créneaux occupés`);
   const balanceArmed = diagnostics.motorArmState === 'BALANCE_ARMED';
   ['axis', 'imu-sign', 'zero-offset', 'vmax', 'motor-control-mode', 'pwm-max', 'torque-limit', 'imu-timeout',
     'pwm-max', 'fall-angle', 'fall-duration', 'manual-timeout'].forEach((id) => {

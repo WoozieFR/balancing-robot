@@ -577,25 +577,36 @@ provenance.
 
 ### 10.3 Ordonnanceur moteur
 
-Toutes les opérations bus sont exécutées sur `robot-motor-io`. L'ordonnanceur
-contient :
+L'ordonnanceur sépare explicitement la sortie temps réel et le diagnostic. Le
+writer `robot-motor-writer` vise 200 Hz (`scheduleAtFixedRate`, période 5 ms)
+et le worker `robot-motor-telemetry` lit un seul servo par créneau à 50 ms.
+Les deux workers partagent un verrou équitable sur le bus demi-duplex, mais la
+télémétrie utilise `tryLock` et une transaction courte de 10 ms : une lecture
+lente abandonne son créneau au lieu de retarder une écriture de contrôle.
+L'ordonnanceur contient :
 
 - `AtomicReference<MotorFrame?> latestControlFrame` ;
 - une file urgente pour zéro et couple off ;
 - une file courte de transactions administratives ;
-- un planificateur de télémétrie.
+- un cache de télémétrie par ID et trois échecs consécutifs avant défaut ;
+- une trace de chaque écriture effective (séquence, consigne, timestamps).
 
 Une nouvelle trame de contrôle remplace la précédente si celle-ci n'a pas
 encore été écrite. Le compteur `supersededMotorFrames` est incrémenté. Les
 transactions administratives ne sont acceptées que désarmé.
 
-Ordre de service à chaque réveil :
+Ordre de service du writer :
 
 1. vider toutes les opérations urgentes ;
 2. écrire la dernière trame de contrôle valide ;
-3. exécuter au plus une transaction administrative ;
-4. lire au plus un bloc de télémétrie arrivé à échéance ;
-5. recommencer s'il reste du travail.
+3. recommencer au prochain slot de 5 ms.
+
+Le worker de télémétrie lit au plus un servo par slot, met à jour le cache,
+puis publie une image complète lorsque les IDs configurés sont disponibles.
+Une nouvelle trame remplace la précédente si celle-ci n'a pas encore été
+écrite ; le compteur `supersededMotorFrames` est incrémenté. Le compteur
+`busBusySkips` rend visibles les créneaux de diagnostic abandonnés au profit du
+writer.
 
 ### 10.4 Groupe moteur
 

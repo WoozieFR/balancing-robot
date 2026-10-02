@@ -28,6 +28,12 @@
   PWM dédiée et exportée dans le journal de contrôle ;
 - application explicite des IDs connus sans scan obligatoire après changement
   des réglages moteur.
+- writer moteur découplé de la télémétrie, cadence cible 200 Hz et abandon des
+  créneaux de diagnostic qui risquent de retarder une écriture ;
+- journal moteur enrichi avec la consigne réellement écrite, son numéro de
+  séquence et les timestamps début/fin d'écriture USB ;
+- sélection effective de l'axe et du signe gyro dans l'estimateur (et non plus
+  axe X forcé).
 
 ## Vérifications
 
@@ -52,10 +58,15 @@ publication. L'APK debug livré est copié dans `dist/` avec son SHA-256.
    encore être ajustés en direct avec les curseurs.
 5. Injecter une perte IMU ou un angle supérieur au seuil et vérifier le défaut
    verrouillé et le couple coupé.
+6. Exporter `/motor-log.csv` et vérifier que `command` correspond à la consigne
+   réellement envoyée, avec `motor_write_start_ns` et `motor_write_end_ns`.
+   Contrôler aussi `supersededFrames` et `busBusySkips` dans le diagnostic ; les
+   lectures télémétriques lentes ne doivent pas faire chuter la cadence du
+   writer.
 
 La capacité à tenir durablement l'équilibre et les gains définitifs restent
 une phase de caractérisation mécanique ultérieure ; aucun armement automatique
 n'est autorisé.
 
 APK : `dist/balancing-robot-debug.apk`  
-SHA-256 : `f2d18087dda70995e6c4e719c05bf46e7b3df0b6a61843abcf4dcaee14b604a2`
+SHA-256 : `7eeba0120dc6d82d10eb0d4318bfc83d3e3e010a47878bb7651c4653d0837094`

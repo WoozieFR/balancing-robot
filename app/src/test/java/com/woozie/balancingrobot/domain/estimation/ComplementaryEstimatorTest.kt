@@ -41,4 +41,15 @@ class ComplementaryEstimatorTest {
         assertEquals(180.0, gyroRateDegPerSec(PI)!!, 1e-9)
         assertNull(gyroRateDegPerSec(Double.POSITIVE_INFINITY))
     }
+
+    @Test
+    fun selectsConfiguredGyroAxisAndSign() {
+        val rate = selectedGyroRateDegPerSec(
+            Vector3(PI, PI / 2.0, -PI),
+            Axis.Y,
+            -1,
+        )
+
+        assertEquals(-90.0, rate!!, 1e-9)
+    }
 }

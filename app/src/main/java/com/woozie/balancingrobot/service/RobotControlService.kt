@@ -30,6 +30,7 @@ import com.woozie.balancingrobot.domain.model.RobotConfig
 import com.woozie.balancingrobot.domain.model.RobotConfigValidator
 import com.woozie.balancingrobot.domain.model.Vector3
 import com.woozie.balancingrobot.domain.estimation.gyroRateDegPerSec
+import com.woozie.balancingrobot.domain.estimation.selectedGyroRateDegPerSec
 import com.woozie.balancingrobot.domain.sensor.ImuRatePolicy
 import com.woozie.balancingrobot.domain.safety.SafetyRules
 import com.woozie.balancingrobot.motor.AndroidUsbSerialTransport
@@ -755,8 +756,14 @@ class RobotControlService : Service() {
     }
 
     private fun onMotorTelemetry(values: List<FeetechTelemetry>) {
-        val command = _state.value.motors.manualCommand
-        values.forEach { motorLog.append(command, it) }
+        val writeTrace = motorScheduler?.lastWriteTrace()
+        values.forEachIndexed { index, telemetry ->
+            motorLog.append(
+                command = writeTrace?.values?.getOrNull(index),
+                telemetry = telemetry,
+                writeTrace = writeTrace,
+            )
+        }
         _state.update { it.copy(motors = it.motors.copy(
             telemetry = values,
             ioMetrics = motorScheduler?.metrics() ?: it.motors.ioMetrics,
@@ -826,8 +833,8 @@ class RobotControlService : Service() {
         previousGyroTimestampNs = timestampNs
         lastGyroReceivedNs = receivedTimestampNs
         val rate = gyroRateMeter.record(timestampNs)
-        val gyroDps = gyroRateDegPerSec(values.x)
-        val gyroXDps = gyroDps
+        val gyroDps = selectedGyroRateDegPerSec(values, activeConfig.axis, activeConfig.imuSign)
+        val gyroXDps = gyroRateDegPerSec(values.x)
         val gyroYDps = gyroRateDegPerSec(values.y)
         val gyroZDps = gyroRateDegPerSec(values.z)
         updateImu {
@@ -1039,6 +1046,12 @@ class RobotControlService : Service() {
             put("motorCommand", motors.manualCommand)
             put("motorDeadmanHeld", motors.deadmanHeld)
             put("motorTelemetryCount", motors.telemetry.size)
+            put("motorWrittenFrames", motors.ioMetrics.writtenFrames)
+            put("motorTelemetryFrames", motors.ioMetrics.telemetryFrames)
+            put("motorSupersededFrames", motors.ioMetrics.supersededFrames)
+            put("motorBusBusySkips", motors.ioMetrics.busBusySkips)
+            motors.ioMetrics.lastWriteLatencyMs?.let { put("motorLastWriteLatencyMs", it) }
+            motors.ioMetrics.lastWriteSequence?.let { put("motorLastWriteSequence", it) }
             put("controlRecording", _state.value.controlRecording.recording)
             put("controlRecordingSamples", _state.value.controlRecording.samples)
             put("axis", config.axis.name)

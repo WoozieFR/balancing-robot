@@ -9,6 +9,17 @@ import kotlin.math.sqrt
 fun gyroRateDegPerSec(gyroRateRadPerSec: Double): Double? =
     if (gyroRateRadPerSec.isFinite()) Math.toDegrees(gyroRateRadPerSec) else null
 
+/** Selects and signs the gyro axis used by the estimator. */
+fun selectedGyroRateDegPerSec(values: Vector3, axis: Axis, sign: Int): Double? {
+    if (!values.isFinite() || sign != -1 && sign != 1) return null
+    val selected = when (axis) {
+        Axis.X -> values.x
+        Axis.Y -> values.y
+        Axis.Z -> values.z
+    }
+    return gyroRateDegPerSec(selected)?.times(sign)
+}
+
 /** Acceleration-only reference angle. Returns null for invalid or singular samples. */
 fun accelAngleDeg(values: Vector3, axis: Axis, sign: Int, offsetDeg: Double): Double? {
     if (!values.isFinite() || sign != -1 && sign != 1 || !offsetDeg.isFinite()) return null
