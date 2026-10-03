@@ -70,7 +70,7 @@ data class RobotFault(
 )
 
 data class RobotConfig(
-    val schemaVersion: Int = 1,
+    val schemaVersion: Int = 2,
     val axis: Axis = Axis.X,
     val imuSign: Int = 1,
     val zeroOffsetDeg: Double = 0.0,
@@ -78,6 +78,17 @@ data class RobotConfig(
     val targetDeg: Double = 0.0,
     val kp: Double = 0.0,
     val kd: Double = 0.0,
+    val speedLoopEnabled: Boolean = true,
+    val speedTargetCmPerSec: Double = 0.0,
+    val speedTargetLimitCmPerSec: Double = 10.0,
+    val speedKevDegPerCmPerSec: Double = 0.0,
+    val speedLoopRateHz: Int = 50,
+    val speedFilterAlpha: Double = 0.5,
+    val speedTargetAngleLimitDeg: Double = 10.0,
+    val speedFeedbackTimeoutMs: Long = 100,
+    val wheelDiameterMm: Double = 40.0,
+    /** Motor revolutions per wheel revolution. */
+    val driveRatio: Double = 1.0,
     val vmax: Int = 6000,
     val motorControlMode: MotorControlMode = MotorControlMode.VELOCITY,
     val pwmMax: Int = 1000,
@@ -89,6 +100,8 @@ data class RobotConfig(
     val fallAngleDeg: Double = 35.0,
     val fallDurationMs: Long = 100,
     val manualTimeoutMs: Long = 300,
+    /** Keep the arm state during IMU/control safety faults, while stopping fresh motor commands. */
+    val inhibitSafetyAutoDisarm: Boolean = false,
     val logCapacity: Int = 200_000,
     val webPort: Int = 8766,
 ) {

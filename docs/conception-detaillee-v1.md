@@ -1,6 +1,6 @@
 # Conception détaillée V1 — Application Android du robot équilibré
 
-**Version :** 0.1  
+**Version :** 0.2
 **Date :** 2026-10-01  
 **Statut :** proposition à valider  
 **Documents amont :** `docs/cahier-des-charges.md`, `docs/specification-v1.md`
@@ -118,7 +118,7 @@ choisi et retourne une erreur explicite s'il est déjà occupé.
 ┌─────────────────────────────────────────────────────────────────────┐
 │ ControlRuntime — propriétaire unique de RobotRuntimeState           │
 │ CommandDispatcher │ StateMachines │ SafetySupervisor                │
-│ ImuPipeline ─► ComplementaryEstimator ─► PdController               │
+│ ImuPipeline ─► ComplementaryEstimator ─► VelocityOuterLoop ─► PD    │
 └──────────┬──────────────────┬──────────────────┬────────────────────┘
            │ latest command   │ events           │ immutable snapshots
            ▼                  ▼                  ▼
@@ -244,7 +244,7 @@ enum class Axis { X, Y, Z }
 
 ```kotlin
 data class RobotConfig(
-    val schemaVersion: Int = 1,
+    val schemaVersion: Int = 2,
     val axis: Axis = Axis.X,
     val imuSign: Int = 1,
     val zeroOffsetDeg: Double = 0.0,
@@ -252,6 +252,16 @@ data class RobotConfig(
     val targetDeg: Double = 0.0,
     val kp: Double = 0.0,
     val kd: Double = 0.0,
+    val speedLoopEnabled: Boolean = true,
+    val speedTargetCmPerSec: Double = 0.0,
+    val speedTargetLimitCmPerSec: Double = 10.0,
+    val speedKevDegPerCmPerSec: Double = 0.0,
+    val speedLoopRateHz: Int = 50,
+    val speedFilterAlpha: Double = 0.5,
+    val speedTargetAngleLimitDeg: Double = 10.0,
+    val speedFeedbackTimeoutMs: Long = 100,
+    val wheelDiameterMm: Double = 40.0,
+    val driveRatio: Double = 1.0,
     val vmax: Int = 6000,
     val motorIds: List<Int> = listOf(6, 7),
     val motorSigns: List<Int> = listOf(1, 1),
@@ -482,6 +492,7 @@ gyro callback
   → angle accel
   → filtre complémentaire
   → contrôle des seuils de chute
+  → boucle vitesse à sa cadence configurée
   → PD si actif
   → publication de la commande calculée
   → dépôt de la dernière commande moteur si armé
@@ -507,6 +518,29 @@ fun applyMotorSigns(base: Int, signs: List<Int>): List<Int>
 
 Elles sont testées avec les vecteurs du dépôt de référence et des cas limites
 numériques.
+
+### 8.4 Boucle externe de vitesse
+
+Le worker de télémétrie fournit une paire atomique des dernières vitesses. Pour
+chaque moteur, la valeur est d'abord multipliée par son `motorSign`, puis
+convertie avec :
+
+```text
+v_cm_s = PresentVelocity × (π × wheelDiameterMm / 10)
+         / (4096 × driveRatio)
+v_mean = (v_left + v_right) / 2
+v_filtered = speedFilterAlpha × v_mean
+             + (1 − speedFilterAlpha) × v_filtered_previous
+angle_target = clamp(targetDeg + Kev × (v_target − v_filtered), ±angleLimit)
+```
+
+`driveRatio` exprime le nombre de tours moteur par tour de roue. L'EMA ne se
+met à jour que lorsque le numéro de séquence de la paire change. Le calcul de
+l'angle s'exécute à `speedLoopRateHz`, 50 Hz par défaut, sur le thread IMU ; il
+n'effectue aucune I/O. Si la paire dépasse `speedFeedbackTimeoutMs`, la cible
+reste gelée à la dernière valeur valide. Une récupération fraîche réinitialise
+l'EMA à la mesure courante afin d'éviter un transitoire fondé sur une ancienne
+vitesse.
 
 ## 9. Supervision de sécurité
 
@@ -579,7 +613,7 @@ provenance.
 
 L'ordonnanceur sépare explicitement la sortie temps réel et le diagnostic. Le
 writer `robot-motor-writer` vise 200 Hz (`scheduleAtFixedRate`, période 5 ms)
-et le worker `robot-motor-telemetry` lit un seul servo par créneau à 50 ms.
+et le worker `robot-motor-telemetry` lit un seul servo par créneau à 10 ms.
 Les deux workers partagent un verrou équitable sur le bus demi-duplex, mais la
 télémétrie utilise `tryLock` et une transaction courte de 10 ms : une lecture
 lente abandonne son créneau au lieu de retarder une écriture de contrôle.
@@ -589,6 +623,7 @@ L'ordonnanceur contient :
 - une file urgente pour zéro et couple off ;
 - une file courte de transactions administratives ;
 - un cache de télémétrie par ID et trois échecs consécutifs avant défaut ;
+- une paire atomique de vitesses horodatées et séquencées ;
 - une trace de chaque écriture effective (séquence, consigne, timestamps).
 
 Une nouvelle trame de contrôle remplace la précédente si celle-ci n'a pas
@@ -601,8 +636,11 @@ Ordre de service du writer :
 2. écrire la dernière trame de contrôle valide ;
 3. recommencer au prochain slot de 5 ms.
 
-Le worker de télémétrie lit au plus un servo par slot, met à jour le cache,
-puis publie une image complète lorsque les IDs configurés sont disponibles.
+Le worker de télémétrie lit au plus un servo par slot. Il alterne les IDs et
+vise ainsi 50 lectures de vitesse par seconde et par moteur. Une lecture sur
+cinq regroupe vitesse, charge, tension et température avec un timeout de 10 ms ;
+les autres ne lisent que `PresentVelocity` avec un timeout de 4 ms. Une paire
+n'est publiée que lorsque chacun des deux moteurs a fourni une nouvelle valeur.
 Une nouvelle trame remplace la précédente si celle-ci n'a pas encore été
 écrite ; le compteur `supersededMotorFrames` est incrémenté. Le compteur
 `busBusySkips` rend visibles les créneaux de diagnostic abandonnés au profit du
@@ -1078,6 +1116,17 @@ Sortie : caractérisation roues levées terminée.
 
 Sortie : premier jalon du CDC satisfait ; le réglage d'équilibre stable reste
 une phase distincte.
+
+### Lot 6 — Boucle externe de vitesse
+
+- retour `PresentVelocity` rapide et paire gauche/droite séquencée ;
+- conversion signée en cm/s avec géométrie configurable ;
+- EMA et boucle `Kev` réglable à 50 Hz par défaut ;
+- gel de cible sur retour périmé et diagnostic de cadence/âge ;
+- réglages live Android/Web et export complet des intermédiaires CSV.
+
+Sortie : implémentation et tests logiciels terminés ; validation roues levées,
+puis essais au sol avec `Kev` progressif, à réaliser sur le robot.
 
 ## 22. Fichiers de documentation produits pendant l'implémentation
 

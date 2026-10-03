@@ -271,6 +271,37 @@ L'application DOIT fournir au minimum les préréglages suivants :
 - **CTL-008 —** Une modification des gains ou de la cible pendant le
   fonctionnement DOIT être bornée, validée et appliquée de manière atomique.
 
+### 9.1 Boucle externe de vitesse
+
+- **VEL-001 —** Une boucle externe DOIT transformer une consigne de vitesse du
+  robot en angle cible pour le PD interne.
+- **VEL-002 —** La vitesse de chaque roue DOIT provenir de `PresentVelocity`,
+  après application du signe moteur configuré.
+- **VEL-003 —** La vitesse physique DOIT être calculée en cm/s avec 4096 pas
+  par tour, le diamètre de roue (40 mm par défaut) et le rapport moteur/roue
+  (1,0 par défaut).
+- **VEL-004 —** La vitesse robot DOIT valoir `(vitesse_gauche +
+  vitesse_droite) / 2`.
+- **VEL-005 —** La vitesse moyenne DOIT être filtrée par une EMA dont l'alpha
+  est réglable, avec `0,5` par défaut.
+- **VEL-006 —** La loi de commande DOIT être
+  `angle_cible = trim + Kev × (vitesse_cible − vitesse_filtrée)`.
+- **VEL-007 —** L'angle cible effectif DOIT être saturé symétriquement, à
+  ±10° par défaut et dans une plage réglable de ±1° à ±15°.
+- **VEL-008 —** La boucle DOIT fonctionner à 50 Hz par défaut, avec une cadence
+  réglable de 5 à 100 Hz. Une cadence supérieure à celle du retour moteur PEUT
+  réutiliser la dernière paire fraîche sans refiltrer deux fois la même mesure.
+- **VEL-009 —** Une paire de vitesses périmée DOIT geler le dernier angle cible
+  valide. Avant la première paire valide, la cible vaut le trim borné.
+- **VEL-010 —** La consigne, `Kev`, les limites, l'alpha, la cadence et le
+  timeout DOIVENT être modifiables en direct pendant l'équilibrage. Le diamètre
+  de roue et le rapport de transmission exigent un désarmement.
+- **VEL-011 —** Toutes les entrées, conversions, valeurs filtrées, erreurs,
+  corrections, saturations, cadences et âges DOIVENT être affichables et
+  exportables dans le CSV de session.
+- **VEL-012 —** La boucle PEUT être désactivée ; le PD utilise alors directement
+  le trim d'angle.
+
 ## 10. Bus USB et moteurs STS3215
 
 ### 10.1 Matériel initial
@@ -306,8 +337,9 @@ La cible initiale est :
   scan, la commande doit être nulle et le couple désactivé.
 - **MOT-009 —** La télémétrie DOIT inclure au minimum présence, vitesse mesurée,
   charge, tension et température lorsque ces valeurs sont disponibles.
-- **MOT-010 —** Un mode diagnostic DOIT viser au moins 20 relevés de télémétrie
-  par seconde et par moteur, sans affamer les écritures de contrôle.
+- **MOT-010 —** Le retour rapide de vitesse DOIT viser 50 relevés par seconde
+  et par moteur. La télémétrie complète de santé DOIT viser 10 relevés par
+  seconde et par moteur, sans affamer les écritures de contrôle.
 - **MOT-011 —** La télémétrie et les scans ne doivent jamais conserver un verrou
   de bus susceptible de retarder indéfiniment une commande de sécurité.
 

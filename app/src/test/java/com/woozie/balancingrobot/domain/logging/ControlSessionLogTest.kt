@@ -33,6 +33,9 @@ class ControlSessionLogTest {
             controlLatencyMs = 1.2,
             armState = "BALANCE_ARMED",
             sampleStatus = null,
+            effectiveTargetDeg = 1.25,
+            speedFilteredCmPerSec = 3.5,
+            speedCorrectionDeg = 1.25,
         )
 
         log.append(record)
@@ -47,6 +50,10 @@ class ControlSessionLogTest {
         assertEquals(1, log.size())
         val csv = log.toCsv()
         assertTrue(csv.lines().first().contains("alpha"))
+        assertTrue(csv.lines().first().contains("speed_filtered_cmps"))
         assertTrue(csv.contains(",0.97,"))
+        assertTrue(csv.contains("3.500000000"))
+        val rows = csv.lineSequence().filter { it.isNotBlank() }.toList()
+        assertEquals(rows.first().split(',').size, rows[1].split(',').size)
     }
 }

@@ -502,6 +502,7 @@ private fun Lot2Screen(
                 config = robotConfig,
                 armState = state.motors.armState,
                 balance = state.balance,
+                speedLoop = state.speedLoop,
                 onApply = onApplyRobotConfig,
                 onArmBalance = onArmBalance,
                 onDisarmBalance = onDisarmBalance,
@@ -785,8 +786,10 @@ private fun MotorDiagnosticCard(
     Text(
         "I/O : ${state.ioMetrics.writtenFrames} écritures (cible 200 Hz) · " +
             "${state.ioMetrics.telemetryFrames} télémétries · " +
+            "${state.ioMetrics.velocityFeedbackFrames} paires vitesse · " +
             "${state.ioMetrics.supersededFrames} commandes remplacées · " +
-            "${state.ioMetrics.busBusySkips} créneaux occupés",
+            "${state.ioMetrics.busBusySkips} créneaux écriture occupés · " +
+            "${state.ioMetrics.velocityFeedbackSkips} retours vitesse manqués",
         style = MaterialTheme.typography.bodySmall,
     )
     state.telemetry.forEach { telemetry ->
@@ -804,6 +807,7 @@ private fun BalanceTuningCard(
     config: RobotConfig,
     armState: MotorArmState,
     balance: com.woozie.balancingrobot.service.BalanceDiagnosticState,
+    speedLoop: com.woozie.balancingrobot.service.SpeedLoopDiagnosticState,
     onApply: (RobotConfig) -> Unit,
     onArmBalance: (Boolean) -> Unit,
     onDisarmBalance: () -> Unit,
@@ -819,12 +823,11 @@ private fun BalanceTuningCard(
         onApply(next)
     }
 
-    Text("Lot 5 · boucle d'équilibrage", style = MaterialTheme.typography.titleMedium)
+    Text("Boucles vitesse et équilibrage", style = MaterialTheme.typography.titleMedium)
     Spacer(Modifier.height(8.dp))
     Text(
-        "Alpha, cible, Kp et Kd sont appliqués en direct, même pendant " +
-            "l'équilibrage. Les paramètres structurels et de sécurité restent " +
-            "verrouillés une fois armé.",
+        "Les gains, les consignes et les fréquences sont appliqués en direct, même pendant " +
+            "l'équilibrage. La géométrie, l'IMU et les sécurités restent verrouillées une fois armé.",
         style = MaterialTheme.typography.bodySmall,
     )
     Spacer(Modifier.height(8.dp))
@@ -844,9 +847,12 @@ private fun BalanceTuningCard(
         change(draft.copy(alpha = it.toDouble()))
     }
     ParameterSlider(
-        "Cible (°) · ±15° en équilibrage",
+        "Trim d'angle (°)",
         draft.targetDeg,
-        if (armState == MotorArmState.BALANCE_ARMED) -15f..15f else -180f..180f,
+        if (armState == MotorArmState.BALANCE_ARMED) {
+            val limit = if (draft.speedLoopEnabled) draft.speedTargetAngleLimitDeg.toFloat() else 15f
+            -limit..limit
+        } else -180f..180f,
         if (armState == MotorArmState.BALANCE_ARMED) 59 else 359,
         liveEditable,
     ) {
@@ -857,6 +863,71 @@ private fun BalanceTuningCard(
     }
     ParameterSlider("Kd", draft.kd, 0f..2000f, 199, liveEditable) {
         change(draft.copy(kd = it.toDouble()))
+    }
+    Row(verticalAlignment = androidx.compose.ui.Alignment.CenterVertically) {
+        Checkbox(
+            checked = draft.speedLoopEnabled,
+            onCheckedChange = { enabled ->
+                change(draft.copy(
+                    speedLoopEnabled = enabled,
+                    targetDeg = if (enabled) {
+                        draft.targetDeg.coerceIn(
+                            -draft.speedTargetAngleLimitDeg,
+                            draft.speedTargetAngleLimitDeg,
+                        )
+                    } else draft.targetDeg,
+                ))
+            },
+            enabled = liveEditable,
+        )
+        Text("Boucle externe de vitesse active", style = MaterialTheme.typography.bodySmall)
+    }
+    ParameterSlider(
+        "Consigne vitesse (cm/s)",
+        draft.speedTargetCmPerSec,
+        -draft.speedTargetLimitCmPerSec.toFloat()..draft.speedTargetLimitCmPerSec.toFloat(),
+        199,
+        liveEditable,
+    ) {
+        change(draft.copy(speedTargetCmPerSec = it.toDouble()))
+    }
+    ParameterSlider(
+        "Limite consigne vitesse (cm/s)",
+        draft.speedTargetLimitCmPerSec,
+        1f..20f,
+        189,
+        liveEditable,
+    ) { value ->
+        val limit = value.toDouble()
+        change(draft.copy(
+            speedTargetLimitCmPerSec = limit,
+            speedTargetCmPerSec = draft.speedTargetCmPerSec.coerceIn(-limit, limit),
+        ))
+    }
+    ParameterSlider("Kev (° par cm/s)", draft.speedKevDegPerCmPerSec, 0f..2f, 199, liveEditable) {
+        change(draft.copy(speedKevDegPerCmPerSec = it.toDouble()))
+    }
+    ParameterSlider("Fréquence boucle vitesse (Hz)", draft.speedLoopRateHz.toFloat(), 5f..100f, 94, liveEditable) {
+        change(draft.copy(speedLoopRateHz = it.toInt()))
+    }
+    ParameterSlider("Alpha filtre vitesse", draft.speedFilterAlpha, 0.01f..1f, 98, liveEditable) {
+        change(draft.copy(speedFilterAlpha = it.toDouble()))
+    }
+    ParameterSlider("Limite cible d'angle (°)", draft.speedTargetAngleLimitDeg, 1f..15f, 139, liveEditable) {
+        val limit = it.toDouble()
+        change(draft.copy(
+            speedTargetAngleLimitDeg = limit,
+            targetDeg = if (draft.speedLoopEnabled) draft.targetDeg.coerceIn(-limit, limit) else draft.targetDeg,
+        ))
+    }
+    ParameterSlider("Timeout retour vitesse (ms)", draft.speedFeedbackTimeoutMs.toFloat(), 40f..500f, 91, liveEditable) {
+        change(draft.copy(speedFeedbackTimeoutMs = it.toLong()))
+    }
+    ParameterSlider("Diamètre roue (mm)", draft.wheelDiameterMm, 10f..300f, 289, guardedEditable) {
+        change(draft.copy(wheelDiameterMm = it.toDouble()))
+    }
+    ParameterSlider("Rapport moteur/roue", draft.driveRatio, 0.1f..100f, 998, guardedEditable) {
+        change(draft.copy(driveRatio = it.toDouble()))
     }
     ParameterSlider("Vitesse maximale", draft.vmax.toFloat(), 0f..20000f, 199, guardedEditable) {
         change(draft.copy(vmax = it.toInt()))
@@ -884,7 +955,8 @@ private fun BalanceTuningCard(
     Row(horizontalArrangement = Arrangement.spacedBy(8.dp)) {
         Button(
             onClick = { onArmBalance(safeTestConfirmed) },
-            enabled = armState == MotorArmState.READY && safeTestConfirmed && abs(draft.targetDeg) <= 15.0,
+            enabled = armState == MotorArmState.READY && safeTestConfirmed &&
+                abs(draft.targetDeg) <= if (draft.speedLoopEnabled) draft.speedTargetAngleLimitDeg else 15.0,
         ) { Text("Armer équilibrage") }
         OutlinedButton(
             onClick = onDisarmBalance,
@@ -896,6 +968,23 @@ private fun BalanceTuningCard(
         "PD : erreur ${number(balance.lastErrorDeg)}° · commande ${balance.lastCommand}" +
             " · latence ${number(balance.controlLatencyMs)} ms${if (balance.saturated) " · SATURÉ" else ""}",
         style = MaterialTheme.typography.bodySmall,
+    )
+    Text(
+        "Vitesse : gauche ${number(speedLoop.leftCmPerSec)} · droite ${number(speedLoop.rightCmPerSec)} · " +
+            "moyenne filtrée ${number(speedLoop.filteredCmPerSec)} cm/s",
+        style = MaterialTheme.typography.bodySmall,
+    )
+    Text(
+        "Boucle ${number(speedLoop.loopRateHz)} Hz · retour ${number(speedLoop.feedbackRateHz)} Hz · " +
+            "erreur ${number(speedLoop.errorCmPerSec)} cm/s · correction ${number(speedLoop.correctionDeg)}° · " +
+            "cible PD ${number(speedLoop.effectiveTargetDeg)}°" +
+            if (!speedLoop.enabled) " · DÉSACTIVÉE" else if (speedLoop.stale) {
+                " · RETOUR PÉRIMÉ (cible gelée)"
+            } else if (speedLoop.saturated) " · CIBLE SATURÉE" else "",
+        style = MaterialTheme.typography.bodySmall,
+        color = if (speedLoop.enabled && speedLoop.stale) {
+            MaterialTheme.colorScheme.error
+        } else MaterialTheme.colorScheme.onSurface,
     )
     balance.faultMessage?.let { Text(it, color = MaterialTheme.colorScheme.error) }
 }

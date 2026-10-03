@@ -151,6 +151,7 @@ class SocketRobotWebServer(
             )
             "/" -> writeAsset(output, "web/index.html", "text/html; charset=utf-8")
             "/app.js" -> writeAsset(output, "web/app.js", "text/javascript; charset=utf-8")
+            "/styles.css" -> writeAsset(output, "web/styles.css", "text/css; charset=utf-8")
             else -> writeHttp(output, 404, "text/plain; charset=utf-8", "Not Found".toByteArray())
         }
     }

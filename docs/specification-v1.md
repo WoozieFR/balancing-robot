@@ -587,6 +587,12 @@ control_sequence,control_submitted_ns,motor_write_start_ns,motor_write_end_ns,
 service_state,arm_state,preset,fault_code,source
 ```
 
+Pour la boucle vitesse, le journal ajoute le diamètre, le rapport de
+transmission, la consigne et sa limite, `Kev`, l'alpha et la cadence demandée,
+les deux vitesses brutes, les deux conversions en cm/s, la moyenne, l'EMA,
+l'erreur, la correction angulaire, la cible PD effective, la saturation, l'âge
+du retour et les cadences mesurées.
+
 Les colonnes non applicables à un événement restent vides. L'export réalise une
 copie cohérente du tampon et ne le bloque pas pendant toute la conversion.
 
@@ -638,7 +644,8 @@ Pour qualifier le téléphone cible :
 - gyro frais : au moins 100 Hz sur une minute ;
 - latence gyro → transport : p95 < 15 ms et p99 < 30 ms ;
 - aucune file de commandes en croissance ;
-- télémétrie diagnostic : au moins 20 Hz par moteur ;
+- retour vitesse rapide : cible 50 Hz par moteur ;
+- télémétrie complète de santé : cible 10 Hz par moteur ;
 - aucun défaut `CONTROL_OVERRUN` dans les conditions nominales.
 
 ## 23. Scénarios fonctionnels de référence

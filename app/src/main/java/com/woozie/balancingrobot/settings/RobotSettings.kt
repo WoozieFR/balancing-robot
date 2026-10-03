@@ -2,6 +2,7 @@ package com.woozie.balancingrobot.settings
 
 import android.content.Context
 import androidx.datastore.preferences.core.edit
+import androidx.datastore.preferences.core.booleanPreferencesKey
 import androidx.datastore.preferences.core.doublePreferencesKey
 import androidx.datastore.preferences.core.intPreferencesKey
 import androidx.datastore.preferences.core.stringPreferencesKey
@@ -32,6 +33,16 @@ object RobotSettings {
     private val targetKey = doublePreferencesKey("target_deg")
     private val kpKey = doublePreferencesKey("kp")
     private val kdKey = doublePreferencesKey("kd")
+    private val speedLoopEnabledKey = booleanPreferencesKey("speed_loop_enabled")
+    private val speedTargetKey = doublePreferencesKey("speed_target_cm_per_sec")
+    private val speedTargetLimitKey = doublePreferencesKey("speed_target_limit_cm_per_sec")
+    private val speedKevKey = doublePreferencesKey("speed_kev_deg_per_cm_per_sec")
+    private val speedLoopRateKey = intPreferencesKey("speed_loop_rate_hz")
+    private val speedFilterAlphaKey = doublePreferencesKey("speed_filter_alpha")
+    private val speedTargetAngleLimitKey = doublePreferencesKey("speed_target_angle_limit_deg")
+    private val speedFeedbackTimeoutKey = intPreferencesKey("speed_feedback_timeout_ms")
+    private val wheelDiameterKey = doublePreferencesKey("wheel_diameter_mm")
+    private val driveRatioKey = doublePreferencesKey("drive_ratio")
     private val vmaxKey = intPreferencesKey("vmax")
     private val motorControlModeKey = stringPreferencesKey("motor_control_mode")
     private val pwmMaxKey = intPreferencesKey("pwm_max")
@@ -42,6 +53,7 @@ object RobotSettings {
     private val fallAngleKey = doublePreferencesKey("fall_angle_deg")
     private val fallDurationKey = intPreferencesKey("fall_duration_ms")
     private val manualTimeoutKey = intPreferencesKey("manual_timeout_ms")
+    private val inhibitSafetyAutoDisarmKey = booleanPreferencesKey("inhibit_safety_auto_disarm")
 
     fun webPort(context: Context): Flow<Int> = context.robotSettingsDataStore.data.map { preferences ->
         preferences[webPortKey] ?: DEFAULT_WEB_PORT
@@ -99,6 +111,18 @@ object RobotSettings {
             targetDeg = preferences[targetKey] ?: defaults.targetDeg,
             kp = preferences[kpKey] ?: defaults.kp,
             kd = preferences[kdKey] ?: defaults.kd,
+            speedLoopEnabled = preferences[speedLoopEnabledKey] ?: defaults.speedLoopEnabled,
+            speedTargetCmPerSec = preferences[speedTargetKey] ?: defaults.speedTargetCmPerSec,
+            speedTargetLimitCmPerSec = preferences[speedTargetLimitKey] ?: defaults.speedTargetLimitCmPerSec,
+            speedKevDegPerCmPerSec = preferences[speedKevKey] ?: defaults.speedKevDegPerCmPerSec,
+            speedLoopRateHz = preferences[speedLoopRateKey] ?: defaults.speedLoopRateHz,
+            speedFilterAlpha = preferences[speedFilterAlphaKey] ?: defaults.speedFilterAlpha,
+            speedTargetAngleLimitDeg = preferences[speedTargetAngleLimitKey]
+                ?: defaults.speedTargetAngleLimitDeg,
+            speedFeedbackTimeoutMs = (preferences[speedFeedbackTimeoutKey]
+                ?: defaults.speedFeedbackTimeoutMs.toInt()).toLong(),
+            wheelDiameterMm = preferences[wheelDiameterKey] ?: defaults.wheelDiameterMm,
+            driveRatio = preferences[driveRatioKey] ?: defaults.driveRatio,
             vmax = preferences[vmaxKey] ?: defaults.vmax,
             motorControlMode = runCatching {
                 MotorControlMode.valueOf(preferences[motorControlModeKey] ?: defaults.motorControlMode.name)
@@ -111,6 +135,8 @@ object RobotSettings {
             fallAngleDeg = preferences[fallAngleKey] ?: defaults.fallAngleDeg,
             fallDurationMs = (preferences[fallDurationKey] ?: defaults.fallDurationMs.toInt()).toLong(),
             manualTimeoutMs = (preferences[manualTimeoutKey] ?: defaults.manualTimeoutMs.toInt()).toLong(),
+            inhibitSafetyAutoDisarm = preferences[inhibitSafetyAutoDisarmKey]
+                ?: defaults.inhibitSafetyAutoDisarm,
         )
         if (RobotConfigValidator.validate(config).isValid) config else defaults
     }
@@ -125,6 +151,16 @@ object RobotSettings {
             preferences[targetKey] = config.targetDeg
             preferences[kpKey] = config.kp
             preferences[kdKey] = config.kd
+            preferences[speedLoopEnabledKey] = config.speedLoopEnabled
+            preferences[speedTargetKey] = config.speedTargetCmPerSec
+            preferences[speedTargetLimitKey] = config.speedTargetLimitCmPerSec
+            preferences[speedKevKey] = config.speedKevDegPerCmPerSec
+            preferences[speedLoopRateKey] = config.speedLoopRateHz
+            preferences[speedFilterAlphaKey] = config.speedFilterAlpha
+            preferences[speedTargetAngleLimitKey] = config.speedTargetAngleLimitDeg
+            preferences[speedFeedbackTimeoutKey] = config.speedFeedbackTimeoutMs.toInt()
+            preferences[wheelDiameterKey] = config.wheelDiameterMm
+            preferences[driveRatioKey] = config.driveRatio
             preferences[vmaxKey] = config.vmax
             preferences[motorControlModeKey] = config.motorControlMode.name
             preferences[pwmMaxKey] = config.pwmMax
@@ -135,6 +171,7 @@ object RobotSettings {
             preferences[fallAngleKey] = config.fallAngleDeg
             preferences[fallDurationKey] = config.fallDurationMs.toInt()
             preferences[manualTimeoutKey] = config.manualTimeoutMs.toInt()
+            preferences[inhibitSafetyAutoDisarmKey] = config.inhibitSafetyAutoDisarm
         }
     }
 }

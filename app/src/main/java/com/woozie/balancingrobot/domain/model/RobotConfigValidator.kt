@@ -8,7 +8,7 @@ data class ConfigValidationResult(val errors: List<ConfigValidationError>) {
 
 /** Validates a complete configuration without correcting any value silently. */
 object RobotConfigValidator {
-    private const val EXPECTED_SCHEMA = 1
+    private const val EXPECTED_SCHEMA = 2
     private const val EXPECTED_BAUD_RATE = 1_000_000
 
     fun validate(config: RobotConfig): ConfigValidationResult {
@@ -29,6 +29,41 @@ object RobotConfigValidator {
             }
             if (!config.kd.isFinite() || config.kd !in 0.0..2000.0) {
                 error("kd", "must be finite and in [0, 2000]")
+            }
+            if (!config.speedTargetLimitCmPerSec.isFinite() ||
+                config.speedTargetLimitCmPerSec !in 1.0..20.0
+            ) {
+                error("speedTargetLimitCmPerSec", "must be finite and in [1, 20]")
+            }
+            if (!config.speedTargetCmPerSec.isFinite() ||
+                kotlin.math.abs(config.speedTargetCmPerSec) > config.speedTargetLimitCmPerSec
+            ) {
+                error("speedTargetCmPerSec", "must be within the configured speed target limit")
+            }
+            if (!config.speedKevDegPerCmPerSec.isFinite() ||
+                config.speedKevDegPerCmPerSec !in 0.0..2.0
+            ) {
+                error("speedKevDegPerCmPerSec", "must be finite and in [0, 2]")
+            }
+            if (config.speedLoopRateHz !in 5..100) {
+                error("speedLoopRateHz", "must be in [5, 100] Hz")
+            }
+            if (!config.speedFilterAlpha.isFinite() || config.speedFilterAlpha !in 0.01..1.0) {
+                error("speedFilterAlpha", "must be finite and in [0.01, 1]")
+            }
+            if (!config.speedTargetAngleLimitDeg.isFinite() ||
+                config.speedTargetAngleLimitDeg !in 1.0..15.0
+            ) {
+                error("speedTargetAngleLimitDeg", "must be finite and in [1, 15] degrees")
+            }
+            if (config.speedFeedbackTimeoutMs !in 40..500) {
+                error("speedFeedbackTimeoutMs", "must be in [40, 500] ms")
+            }
+            if (!config.wheelDiameterMm.isFinite() || config.wheelDiameterMm !in 10.0..300.0) {
+                error("wheelDiameterMm", "must be finite and in [10, 300] mm")
+            }
+            if (!config.driveRatio.isFinite() || config.driveRatio !in 0.1..100.0) {
+                error("driveRatio", "must be finite and in [0.1, 100]")
             }
             if (config.vmax !in 0..20_000) error("vmax", "must be in [0, 20000]")
             if (config.pwmMax !in 0..1_000) error("pwmMax", "must be in [0, 1000]")

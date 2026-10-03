@@ -38,4 +38,27 @@ class RobotConfigValidatorTest {
         assertTrue(RobotConfigValidator.validate(config).isValid)
         assertEquals(700, config.commandLimit)
     }
+
+    @Test
+    fun rejectsInconsistentOrUnsafeSpeedLoopParameters() {
+        val result = RobotConfigValidator.validate(RobotConfig(
+            speedTargetCmPerSec = 11.0,
+            speedTargetLimitCmPerSec = 10.0,
+            speedKevDegPerCmPerSec = -0.1,
+            speedLoopRateHz = 101,
+            wheelDiameterMm = 0.0,
+            driveRatio = 0.0,
+        ))
+
+        assertEquals(
+            setOf(
+                "speedTargetCmPerSec",
+                "speedKevDegPerCmPerSec",
+                "speedLoopRateHz",
+                "wheelDiameterMm",
+                "driveRatio",
+            ),
+            result.errors.map { it.field }.toSet(),
+        )
+    }
 }

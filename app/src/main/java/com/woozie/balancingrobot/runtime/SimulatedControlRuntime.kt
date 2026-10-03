@@ -38,23 +38,33 @@ class SimulatedControlRuntime(initialConfig: RobotConfig) {
 
     fun reset() = estimator.reset()
 
-    fun step(accel: Vector3, gyroRateDegPerSec: Double, dtSec: Double): SimulationStep {
+    fun step(
+        accel: Vector3,
+        gyroRateDegPerSec: Double,
+        dtSec: Double,
+        targetDeg: Double = config.targetDeg,
+    ): SimulationStep {
         val reference = accelAngleDeg(accel, config.axis, config.imuSign, config.zeroOffsetDeg)
             ?: return SimulationStep(null, null, FaultCode.ESTIMATE_INVALID)
-        return step(reference, gyroRateDegPerSec, dtSec)
+        return step(reference, gyroRateDegPerSec, dtSec, targetDeg)
     }
 
-    fun step(accelAngleDeg: Double, gyroRateDegPerSec: Double, dtSec: Double): SimulationStep {
+    fun step(
+        accelAngleDeg: Double,
+        gyroRateDegPerSec: Double,
+        dtSec: Double,
+        targetDeg: Double = config.targetDeg,
+    ): SimulationStep {
         val angle = estimator.step(gyroRateDegPerSec, dtSec, accelAngleDeg)
             ?: return SimulationStep(null, null, FaultCode.ESTIMATE_INVALID)
         val estimate = Estimate(accelAngleDeg, angle, gyroRateDegPerSec, dtSec)
         val base = try {
-            pdStep(config.targetDeg, angle, gyroRateDegPerSec, config.kp, config.kd, config.commandLimit)
+            pdStep(targetDeg, angle, gyroRateDegPerSec, config.kp, config.kd, config.commandLimit)
         } catch (_: IllegalArgumentException) {
             return SimulationStep(estimate, null, FaultCode.ESTIMATE_INVALID)
         }
         val output = ControlOutput(
-            targetDeg = config.targetDeg,
+            targetDeg = targetDeg,
             errorDeg = base.errorDeg,
             rawCommand = base.rawCommand,
             boundedCommand = base.boundedCommand,

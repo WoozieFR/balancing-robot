@@ -96,6 +96,19 @@ class FeetechBus(
         return FeetechTelemetry(servoId, velocity, load, voltage, temperature)
     }
 
+    fun readVelocity(servoId: Int, transactionTimeoutMs: Int = timeoutMs): Int? {
+        val response = readRegister(
+            servoId,
+            FeetechProtocol.PRESENT_VELOCITY,
+            2,
+            transactionTimeoutMs,
+        ) ?: return null
+        if (response.parameters.size < 2) return null
+        return FeetechProtocol.decodeSignMagnitude(
+            littleEndianValue(response.parameters.copyOfRange(0, 2)),
+        )
+    }
+
     fun readRegister(
         servoId: Int,
         address: Int,

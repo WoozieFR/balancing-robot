@@ -90,4 +90,29 @@ class FeetechProtocolTest {
         assertEquals(7.5, telemetry.voltage, 0.001)
         assertEquals(42, telemetry.temperatureC)
     }
+
+    @Test
+    fun readsSignedVelocityWithShortTransactionTimeout() {
+        val encoded = FeetechProtocol.encodeSignMagnitude(-321)
+        val response = FeetechProtocol.buildPacket(
+            servoId = 7,
+            instruction = 0,
+            parameters = byteArrayOf(encoded.toByte(), (encoded shr 8).toByte()),
+        )
+        var observedTimeout = 0
+        val port = object : FeetechPort {
+            override fun flush() = Unit
+            override fun write(data: ByteArray, timeoutMs: Int): Int {
+                observedTimeout = timeoutMs
+                return data.size
+            }
+            override fun read(maxBytes: Int, timeoutMs: Int): ByteArray = response
+            override fun close() = Unit
+        }
+
+        val velocity = FeetechBus(port).readVelocity(7, transactionTimeoutMs = 4)
+
+        assertEquals(-321, velocity)
+        assertEquals(4, observedTimeout)
+    }
 }

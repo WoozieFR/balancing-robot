@@ -24,6 +24,10 @@ import com.woozie.balancingrobot.domain.logging.MotorTelemetryLog
 import com.woozie.balancingrobot.domain.logging.ControlLogRecord
 import com.woozie.balancingrobot.domain.logging.ControlSessionLog
 import com.woozie.balancingrobot.domain.metrics.SampleRateMeter
+import com.woozie.balancingrobot.domain.control.VelocityLoopOutput
+import com.woozie.balancingrobot.domain.control.VelocityOuterLoop
+import com.woozie.balancingrobot.domain.control.WheelVelocityFeedback
+import com.woozie.balancingrobot.domain.control.normalizeWheelVelocity
 import com.woozie.balancingrobot.domain.model.Axis
 import com.woozie.balancingrobot.domain.model.MotorControlMode
 import com.woozie.balancingrobot.domain.model.RobotConfig
@@ -73,6 +77,7 @@ data class RobotServiceState(
     val config: RobotConfig = RobotConfig(),
     val imu: ImuDiagnosticState = ImuDiagnosticState(),
     val balance: BalanceDiagnosticState = BalanceDiagnosticState(),
+    val speedLoop: SpeedLoopDiagnosticState = SpeedLoopDiagnosticState(),
     val controlRecording: ControlRecordingState = ControlRecordingState(),
     val motors: MotorDiagnosticState = MotorDiagnosticState(),
 )
@@ -126,6 +131,12 @@ class RobotControlService : Service() {
     private var previousGyroTimestampNs: Long? = null
     private val accelRateMeter = SampleRateMeter()
     private val gyroRateMeter = SampleRateMeter()
+    private val speedLoopRateMeter = SampleRateMeter()
+    private val speedFeedbackRateMeter = SampleRateMeter()
+    private var velocityOuterLoop = VelocityOuterLoop(RobotConfig())
+    private var lastSpeedFeedbackSequence: Long? = null
+    private var speedLoopActualRateHz = 0.0
+    private var speedFeedbackActualRateHz = 0.0
     private val imuLog = ImuSampleLog()
     private val motorLog = MotorTelemetryLog()
     private val controlLog = ControlSessionLog()
@@ -326,15 +337,19 @@ class RobotControlService : Service() {
             activeConfig.imuTimeoutMs != config.imuTimeoutMs ||
             activeConfig.fallAngleDeg != config.fallAngleDeg ||
             activeConfig.fallDurationMs != config.fallDurationMs ||
-            activeConfig.manualTimeoutMs != config.manualTimeoutMs
+            activeConfig.manualTimeoutMs != config.manualTimeoutMs ||
+            activeConfig.wheelDiameterMm != config.wheelDiameterMm ||
+            activeConfig.driveRatio != config.driveRatio
+        val targetLimit = if (config.speedLoopEnabled) config.speedTargetAngleLimitDeg else 15.0
         val forbiddenWhileArmed = currentArm == MotorArmState.BALANCE_ARMED &&
-            (protectedChanged || kotlin.math.abs(config.targetDeg) > 15.0)
+            (protectedChanged || kotlin.math.abs(config.targetDeg) > targetLimit)
         if (!validation.isValid || currentArm == MotorArmState.MANUAL_ARMED ||
             currentArm == MotorArmState.FAULT_LATCHED || forbiddenWhileArmed
         ) {
             val message = when {
                 !validation.isValid -> validation.errors.joinToString { error -> "${error.field}: ${error.message}" }
-                forbiddenWhileArmed -> "Pendant l'équilibrage seuls alpha, cible, Kp et Kd sont modifiables"
+                forbiddenWhileArmed ->
+                    "Pendant l'équilibrage, la géométrie, l'IMU, les moteurs et les sécurités restent verrouillés"
                 else -> "Réglages indisponibles pendant le mode manuel ou un défaut"
             }
             _state.update { it.copy(errorMessage = message) }
@@ -357,10 +372,16 @@ class RobotControlService : Service() {
         activeConfig = config
         if (imuRuntime == null) imuRuntime = SimulatedControlRuntime(config)
         else imuRuntime?.updateConfig(config)
+        velocityOuterLoop.updateConfig(config)
         _state.update { state ->
             state.copy(
                 config = config,
                 errorMessage = null,
+                speedLoop = state.speedLoop.copy(
+                    enabled = config.speedLoopEnabled,
+                    targetCmPerSec = config.speedTargetCmPerSec,
+                    trimDeg = config.targetDeg,
+                ),
                 motors = if (motorConfigChanged) state.motors.copy(
                     requiredIds = config.motorIds,
                     motorSigns = config.motorSigns,
@@ -390,7 +411,9 @@ class RobotControlService : Service() {
             !current.imu.gyroscopeAvailable || current.imu.estimatedAngleDeg == null ||
             !SafetyRules.isGyroFresh(SystemClock.elapsedRealtimeNanos(), lastGyroReceivedNs, activeConfig.imuTimeoutMs) ||
             kotlin.math.abs(current.imu.estimatedAngleDeg) >= activeConfig.fallAngleDeg ||
-            kotlin.math.abs(activeConfig.targetDeg) > 15.0
+            kotlin.math.abs(activeConfig.targetDeg) > if (activeConfig.speedLoopEnabled) {
+                activeConfig.speedTargetAngleLimitDeg
+            } else 15.0
         ) {
             _state.update { it.copy(motors = it.motors.copy(errorMessage = "Prérequis d'équilibrage non satisfaits")) }
             return
@@ -444,6 +467,14 @@ class RobotControlService : Service() {
 
     private fun triggerBalanceFault(message: String) {
         if (_state.value.motors.armState != MotorArmState.BALANCE_ARMED) return
+        if (activeConfig.inhibitSafetyAutoDisarm) {
+            _state.update { state ->
+                state.copy(balance = state.balance.copy(
+                    faultMessage = "Sécurité inhibée : $message",
+                ))
+            }
+            return
+        }
         motorScheduler?.safetyStop()
         _state.update { it.copy(
             motors = it.motors.copy(
@@ -660,6 +691,17 @@ class RobotControlService : Service() {
             running = true,
             serverUrl = url,
             config = config,
+            speedLoop = SpeedLoopDiagnosticState(
+                enabled = config.speedLoopEnabled,
+                targetCmPerSec = config.speedTargetCmPerSec,
+                trimDeg = config.targetDeg,
+                effectiveTargetDeg = if (config.speedLoopEnabled) {
+                    config.targetDeg.coerceIn(
+                        -config.speedTargetAngleLimitDeg,
+                        config.speedTargetAngleLimitDeg,
+                    )
+                } else config.targetDeg,
+            ),
             imu = ImuDiagnosticState(
                 requestedRateHz = imuRateHz,
                 status = "Initialisation des capteurs…",
@@ -694,6 +736,12 @@ class RobotControlService : Service() {
         fallStartedNs = null
         accelRateMeter.reset()
         gyroRateMeter.reset()
+        speedLoopRateMeter.reset()
+        speedFeedbackRateMeter.reset()
+        speedLoopActualRateHz = 0.0
+        speedFeedbackActualRateHz = 0.0
+        lastSpeedFeedbackSequence = null
+        velocityOuterLoop = VelocityOuterLoop(activeConfig)
         imuLog.clear()
         trace.clear()
         lastTracePublishNs = 0L
@@ -752,6 +800,7 @@ class RobotControlService : Service() {
             manualTimeoutMs = config.manualTimeoutMs,
             onTelemetry = ::onMotorTelemetry,
             onFault = ::onMotorFault,
+            clockNs = SystemClock::elapsedRealtimeNanos,
         ).also { it.start() }
     }
 
@@ -771,6 +820,18 @@ class RobotControlService : Service() {
     }
 
     private fun onMotorFault(message: String) {
+        if (activeConfig.inhibitSafetyAutoDisarm &&
+            (_state.value.motors.armState == MotorArmState.MANUAL_ARMED ||
+                _state.value.motors.armState == MotorArmState.BALANCE_ARMED)
+        ) {
+            _state.update { state ->
+                state.copy(motors = state.motors.copy(
+                    errorMessage = "Sécurité inhibée : $message",
+                    lastAction = "Défaut moteur signalé, désarmement automatique inhibé",
+                ))
+            }
+            return
+        }
         motorScheduler?.safetyStop()
         _state.update { it.copy(motors = it.motors.copy(
             armState = MotorArmState.FAULT_LATCHED,
@@ -890,7 +951,13 @@ class RobotControlService : Service() {
             return
         }
 
-        val step = imuRuntime?.step(accel!!, gyroDps, dtSec)
+        val speedOutput = updateSpeedLoop(receivedTimestampNs)
+        val step = imuRuntime?.step(
+            accel!!,
+            gyroDps,
+            dtSec,
+            targetDeg = speedOutput.effectiveTargetDeg,
+        )
         val estimate = step?.estimate
         val accelAngle = estimate?.accelAngleDeg
         val estimatedAngle = estimate?.angleDeg
@@ -957,8 +1024,64 @@ class RobotControlService : Service() {
             dtSec = dtSec,
             control = control,
             controlLatencyMs = latencyMs,
+            speedOutput = speedOutput,
             sampleStatus = step?.fault?.name,
         )
+    }
+
+    private fun updateSpeedLoop(nowNs: Long): VelocityLoopOutput {
+        val snapshot = motorScheduler?.velocitySnapshot()
+        val feedback = if (
+            snapshot != null && snapshot.values.size >= 2 && snapshot.timestampsNs.size >= 2 &&
+            activeConfig.motorSigns.size >= 2
+        ) {
+            if (snapshot.sequence != lastSpeedFeedbackSequence) {
+                lastSpeedFeedbackSequence = snapshot.sequence
+                speedFeedbackActualRateHz = speedFeedbackRateMeter
+                    .record(snapshot.timestampsNs.maxOrNull() ?: nowNs)
+                    .frequencyHz
+            }
+            WheelVelocityFeedback(
+                sequence = snapshot.sequence,
+                leftStepsPerSec = normalizeWheelVelocity(
+                    snapshot.values[0],
+                    activeConfig.motorSigns[0],
+                ),
+                rightStepsPerSec = normalizeWheelVelocity(
+                    snapshot.values[1],
+                    activeConfig.motorSigns[1],
+                ),
+                leftTimestampNs = snapshot.timestampsNs[0],
+                rightTimestampNs = snapshot.timestampsNs[1],
+            )
+        } else null
+        val output = velocityOuterLoop.step(nowNs, feedback)
+        if (output.updated) {
+            speedLoopActualRateHz = speedLoopRateMeter.record(nowNs).frequencyHz
+            _state.update { state ->
+                state.copy(speedLoop = SpeedLoopDiagnosticState(
+                    enabled = output.enabled,
+                    stale = output.stale,
+                    feedbackSequence = output.feedbackSequence,
+                    feedbackAgeMs = output.feedbackAgeMs,
+                    feedbackRateHz = speedFeedbackActualRateHz,
+                    loopRateHz = speedLoopActualRateHz,
+                    leftRawStepsPerSec = output.leftRawStepsPerSec,
+                    rightRawStepsPerSec = output.rightRawStepsPerSec,
+                    leftCmPerSec = output.leftCmPerSec,
+                    rightCmPerSec = output.rightCmPerSec,
+                    meanCmPerSec = output.meanCmPerSec,
+                    filteredCmPerSec = output.filteredCmPerSec,
+                    targetCmPerSec = output.targetCmPerSec,
+                    errorCmPerSec = output.errorCmPerSec,
+                    correctionDeg = output.correctionDeg,
+                    trimDeg = output.trimDeg,
+                    effectiveTargetDeg = output.effectiveTargetDeg,
+                    saturated = output.saturated,
+                ))
+            }
+        }
+        return output
     }
 
     private fun appendControlRecord(
@@ -975,6 +1098,7 @@ class RobotControlService : Service() {
         dtSec: Double? = null,
         control: com.woozie.balancingrobot.domain.model.ControlOutput? = null,
         controlLatencyMs: Double? = null,
+        speedOutput: VelocityLoopOutput? = null,
         sampleStatus: String? = null,
     ) {
         if (!controlLog.isRecording()) return
@@ -1003,6 +1127,23 @@ class RobotControlService : Service() {
                 controlLatencyMs = controlLatencyMs,
                 armState = _state.value.motors.armState.name,
                 sampleStatus = sampleStatus,
+                effectiveTargetDeg = control?.targetDeg,
+                speedLoopEnabled = speedOutput?.enabled,
+                speedFeedbackSequence = speedOutput?.feedbackSequence,
+                speedFeedbackAgeMs = speedOutput?.feedbackAgeMs,
+                speedLeftRawStepsPerSec = speedOutput?.leftRawStepsPerSec,
+                speedRightRawStepsPerSec = speedOutput?.rightRawStepsPerSec,
+                speedLeftCmPerSec = speedOutput?.leftCmPerSec,
+                speedRightCmPerSec = speedOutput?.rightCmPerSec,
+                speedMeanCmPerSec = speedOutput?.meanCmPerSec,
+                speedFilteredCmPerSec = speedOutput?.filteredCmPerSec,
+                speedTargetCmPerSec = speedOutput?.targetCmPerSec,
+                speedErrorCmPerSec = speedOutput?.errorCmPerSec,
+                speedCorrectionDeg = speedOutput?.correctionDeg,
+                speedStale = speedOutput?.stale,
+                speedTargetSaturated = speedOutput?.saturated,
+                speedLoopActualRateHz = speedLoopActualRateHz,
+                speedFeedbackActualRateHz = speedFeedbackActualRateHz,
             ),
         )
         val now = SystemClock.elapsedRealtimeNanos()
@@ -1023,6 +1164,7 @@ class RobotControlService : Service() {
         val motors = _state.value.motors
         val config = _state.value.config
         val balance = _state.value.balance
+        val speed = _state.value.speedLoop
         return buildJsonObject {
             put("serviceRunning", _state.value.running)
             put("requestedRateHz", imu.requestedRateHz)
@@ -1048,6 +1190,8 @@ class RobotControlService : Service() {
             put("motorTelemetryCount", motors.telemetry.size)
             put("motorWrittenFrames", motors.ioMetrics.writtenFrames)
             put("motorTelemetryFrames", motors.ioMetrics.telemetryFrames)
+            put("motorVelocityFeedbackFrames", motors.ioMetrics.velocityFeedbackFrames)
+            put("motorVelocityFeedbackSkips", motors.ioMetrics.velocityFeedbackSkips)
             put("motorSupersededFrames", motors.ioMetrics.supersededFrames)
             put("motorBusBusySkips", motors.ioMetrics.busBusySkips)
             motors.ioMetrics.lastWriteLatencyMs?.let { put("motorLastWriteLatencyMs", it) }
@@ -1061,6 +1205,31 @@ class RobotControlService : Service() {
             put("targetDeg", config.targetDeg)
             put("kp", config.kp)
             put("kd", config.kd)
+            put("speedLoopEnabled", config.speedLoopEnabled)
+            put("speedTargetCmPerSec", config.speedTargetCmPerSec)
+            put("speedTargetLimitCmPerSec", config.speedTargetLimitCmPerSec)
+            put("speedKevDegPerCmPerSec", config.speedKevDegPerCmPerSec)
+            put("speedLoopRateHz", config.speedLoopRateHz)
+            put("speedFilterAlpha", config.speedFilterAlpha)
+            put("speedTargetAngleLimitDeg", config.speedTargetAngleLimitDeg)
+            put("speedFeedbackTimeoutMs", config.speedFeedbackTimeoutMs)
+            put("wheelDiameterMm", config.wheelDiameterMm)
+            put("driveRatio", config.driveRatio)
+            put("speedFeedbackStale", speed.stale)
+            put("speedFeedbackRateHz", speed.feedbackRateHz)
+            put("speedLoopActualRateHz", speed.loopRateHz)
+            speed.feedbackSequence?.let { put("speedFeedbackSequence", it) }
+            speed.feedbackAgeMs?.let { put("speedFeedbackAgeMs", it) }
+            speed.leftRawStepsPerSec?.let { put("speedLeftRawStepsPerSec", it) }
+            speed.rightRawStepsPerSec?.let { put("speedRightRawStepsPerSec", it) }
+            speed.leftCmPerSec?.let { put("speedLeftCmPerSec", it) }
+            speed.rightCmPerSec?.let { put("speedRightCmPerSec", it) }
+            speed.meanCmPerSec?.let { put("speedMeanCmPerSec", it) }
+            speed.filteredCmPerSec?.let { put("speedFilteredCmPerSec", it) }
+            speed.errorCmPerSec?.let { put("speedErrorCmPerSec", it) }
+            put("speedCorrectionDeg", speed.correctionDeg)
+            put("speedEffectiveTargetDeg", speed.effectiveTargetDeg)
+            put("speedTargetSaturated", speed.saturated)
             put("vmax", config.vmax)
             put("motorControlMode", config.motorControlMode.name)
             put("pwmMax", config.pwmMax)
@@ -1073,6 +1242,13 @@ class RobotControlService : Service() {
             put("controlCommand", balance.lastCommand)
             balance.lastErrorDeg?.let { put("controlErrorDeg", it) }
             balance.controlLatencyMs?.let { put("controlLatencyMs", it) }
+            put("inhibitSafetyAutoDisarm", config.inhibitSafetyAutoDisarm)
+            balance.faultMessage?.let { put("safetyWarning", it) }
+            val nowNs = SystemClock.elapsedRealtimeNanos()
+            put("gyroFresh", SafetyRules.isGyroFresh(nowNs, lastGyroReceivedNs, config.imuTimeoutMs))
+            lastGyroReceivedNs?.let { timestampNs ->
+                put("gyroAgeMs", (nowNs - timestampNs).coerceAtLeast(0L) / 1_000_000.0)
+            }
             motors.errorMessage?.let { put("motorError", it) }
             motors.telemetry.forEachIndexed { index, telemetry ->
                 put("motor${index}Id", telemetry.servoId)
@@ -1134,6 +1310,28 @@ class RobotControlService : Service() {
                     targetDeg = WebProtocol.payloadDouble(command, "targetDeg") ?: _state.value.config.targetDeg,
                     kp = WebProtocol.payloadDouble(command, "kp") ?: _state.value.config.kp,
                     kd = WebProtocol.payloadDouble(command, "kd") ?: _state.value.config.kd,
+                    speedLoopEnabled = WebProtocol.payloadBoolean(command, "speedLoopEnabled")
+                        ?: _state.value.config.speedLoopEnabled,
+                    speedTargetCmPerSec = WebProtocol.payloadDouble(command, "speedTargetCmPerSec")
+                        ?: _state.value.config.speedTargetCmPerSec,
+                    speedTargetLimitCmPerSec = WebProtocol.payloadDouble(command, "speedTargetLimitCmPerSec")
+                        ?: _state.value.config.speedTargetLimitCmPerSec,
+                    speedKevDegPerCmPerSec = WebProtocol.payloadDouble(command, "speedKevDegPerCmPerSec")
+                        ?: _state.value.config.speedKevDegPerCmPerSec,
+                    speedLoopRateHz = WebProtocol.payloadInt(command, "speedLoopRateHz")
+                        ?: _state.value.config.speedLoopRateHz,
+                    speedFilterAlpha = WebProtocol.payloadDouble(command, "speedFilterAlpha")
+                        ?: _state.value.config.speedFilterAlpha,
+                    speedTargetAngleLimitDeg = WebProtocol.payloadDouble(command, "speedTargetAngleLimitDeg")
+                        ?: _state.value.config.speedTargetAngleLimitDeg,
+                    speedFeedbackTimeoutMs = (
+                        WebProtocol.payloadInt(command, "speedFeedbackTimeoutMs")
+                            ?: _state.value.config.speedFeedbackTimeoutMs.toInt()
+                        ).toLong(),
+                    wheelDiameterMm = WebProtocol.payloadDouble(command, "wheelDiameterMm")
+                        ?: _state.value.config.wheelDiameterMm,
+                    driveRatio = WebProtocol.payloadDouble(command, "driveRatio")
+                        ?: _state.value.config.driveRatio,
                     zeroOffsetDeg = WebProtocol.payloadDouble(command, "zeroOffsetDeg") ?: _state.value.config.zeroOffsetDeg,
                     vmax = WebProtocol.payloadInt(command, "vmax") ?: _state.value.config.vmax,
                     motorControlMode = WebProtocol.payloadString(command, "motorControlMode")
@@ -1145,6 +1343,8 @@ class RobotControlService : Service() {
                     fallAngleDeg = WebProtocol.payloadDouble(command, "fallAngleDeg") ?: _state.value.config.fallAngleDeg,
                     fallDurationMs = (WebProtocol.payloadInt(command, "fallDurationMs") ?: _state.value.config.fallDurationMs.toInt()).toLong(),
                     manualTimeoutMs = (WebProtocol.payloadInt(command, "manualTimeoutMs") ?: _state.value.config.manualTimeoutMs.toInt()).toLong(),
+                    inhibitSafetyAutoDisarm = WebProtocol.payloadBoolean(command, "inhibitSafetyAutoDisarm")
+                        ?: _state.value.config.inhibitSafetyAutoDisarm,
                 )
                 updateRobotConfig(config)
                 WebProtocol.ack(command.id, true, message = "Paramètres demandés")

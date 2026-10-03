@@ -28,6 +28,23 @@ data class ControlLogRecord(
     val controlLatencyMs: Double?,
     val armState: String,
     val sampleStatus: String?,
+    val effectiveTargetDeg: Double? = null,
+    val speedLoopEnabled: Boolean? = null,
+    val speedFeedbackSequence: Long? = null,
+    val speedFeedbackAgeMs: Double? = null,
+    val speedLeftRawStepsPerSec: Int? = null,
+    val speedRightRawStepsPerSec: Int? = null,
+    val speedLeftCmPerSec: Double? = null,
+    val speedRightCmPerSec: Double? = null,
+    val speedMeanCmPerSec: Double? = null,
+    val speedFilteredCmPerSec: Double? = null,
+    val speedTargetCmPerSec: Double? = null,
+    val speedErrorCmPerSec: Double? = null,
+    val speedCorrectionDeg: Double? = null,
+    val speedStale: Boolean? = null,
+    val speedTargetSaturated: Boolean? = null,
+    val speedLoopActualRateHz: Double? = null,
+    val speedFeedbackActualRateHz: Double? = null,
 )
 
 /** Explicit start/stop ring buffer for a RAM-resident control session. */
@@ -72,11 +89,17 @@ class ControlSessionLog(private val capacity: Int = 100_000) {
         appendLine(
             "timestamp_ns,received_timestamp_ns,accel_x_mps2,accel_y_mps2,accel_z_mps2," +
                 "gyro_x_dps,gyro_y_dps,gyro_z_dps,accel_angle_deg,estimated_angle_deg," +
-                "gyro_rate_dps,dt_s,schema_version,axis,imu_sign,zero_offset_deg,alpha,target_deg,kp,kd," +
+                "gyro_rate_dps,dt_s,schema_version,axis,imu_sign,zero_offset_deg,alpha,angle_trim_deg,target_deg,kp,kd," +
+                "speed_loop_enabled,speed_target_cmps,speed_target_limit_cmps,speed_kev_deg_per_cmps," +
+                "speed_loop_rate_hz,speed_filter_alpha,speed_target_angle_limit_deg,speed_feedback_timeout_ms," +
+                "wheel_diameter_mm,drive_ratio," +
                 "vmax,motor_control_mode,pwm_max,command_limit,motor_id_0,motor_id_1,motor_sign_0,motor_sign_1,baud_rate,torque_limit," +
-                "imu_timeout_ms,fall_angle_deg,fall_duration_ms,manual_timeout_ms,log_capacity," +
+                "imu_timeout_ms,fall_angle_deg,fall_duration_ms,manual_timeout_ms,inhibit_safety_auto_disarm,log_capacity," +
                 "web_port,error_deg,raw_command,bounded_command,saturated,motor_command_0," +
-                "motor_command_1,control_latency_ms,arm_state,sample_status",
+                "motor_command_1,control_latency_ms,speed_feedback_sequence,speed_feedback_age_ms," +
+                "speed_left_raw_steps_per_s,speed_right_raw_steps_per_s,speed_left_cmps,speed_right_cmps," +
+                "speed_mean_cmps,speed_filtered_cmps,speed_error_cmps,speed_correction_deg,speed_stale," +
+                "speed_target_saturated,speed_loop_actual_hz,speed_feedback_actual_hz,arm_state,sample_status",
         )
         records.forEach { record ->
             val config = record.config
@@ -98,8 +121,19 @@ class ControlSessionLog(private val capacity: Int = 100_000) {
                 .append(config.zeroOffsetDeg).append(',')
                 .append(config.alpha).append(',')
                 .append(config.targetDeg).append(',')
+                .appendNullable(record.effectiveTargetDeg).append(',')
                 .append(config.kp).append(',')
                 .append(config.kd).append(',')
+                .append(record.speedLoopEnabled ?: config.speedLoopEnabled).append(',')
+                .append(record.speedTargetCmPerSec ?: config.speedTargetCmPerSec).append(',')
+                .append(config.speedTargetLimitCmPerSec).append(',')
+                .append(config.speedKevDegPerCmPerSec).append(',')
+                .append(config.speedLoopRateHz).append(',')
+                .append(config.speedFilterAlpha).append(',')
+                .append(config.speedTargetAngleLimitDeg).append(',')
+                .append(config.speedFeedbackTimeoutMs).append(',')
+                .append(config.wheelDiameterMm).append(',')
+                .append(config.driveRatio).append(',')
                 .append(config.vmax).append(',')
                 .append(config.motorControlMode.name).append(',')
                 .append(config.pwmMax).append(',')
@@ -114,6 +148,7 @@ class ControlSessionLog(private val capacity: Int = 100_000) {
                 .append(config.fallAngleDeg).append(',')
                 .append(config.fallDurationMs).append(',')
                 .append(config.manualTimeoutMs).append(',')
+                .append(config.inhibitSafetyAutoDisarm).append(',')
                 .append(config.logCapacity).append(',')
                 .append(config.webPort).append(',')
                 .appendNullable(record.errorDeg).append(',')
@@ -123,6 +158,20 @@ class ControlSessionLog(private val capacity: Int = 100_000) {
                 .append(record.motorCommand0 ?: "").append(',')
                 .append(record.motorCommand1 ?: "").append(',')
                 .appendNullable(record.controlLatencyMs).append(',')
+                .append(record.speedFeedbackSequence ?: "").append(',')
+                .appendNullable(record.speedFeedbackAgeMs).append(',')
+                .append(record.speedLeftRawStepsPerSec ?: "").append(',')
+                .append(record.speedRightRawStepsPerSec ?: "").append(',')
+                .appendNullable(record.speedLeftCmPerSec).append(',')
+                .appendNullable(record.speedRightCmPerSec).append(',')
+                .appendNullable(record.speedMeanCmPerSec).append(',')
+                .appendNullable(record.speedFilteredCmPerSec).append(',')
+                .appendNullable(record.speedErrorCmPerSec).append(',')
+                .appendNullable(record.speedCorrectionDeg).append(',')
+                .append(record.speedStale ?: "").append(',')
+                .append(record.speedTargetSaturated ?: "").append(',')
+                .appendNullable(record.speedLoopActualRateHz).append(',')
+                .appendNullable(record.speedFeedbackActualRateHz).append(',')
                 .append(record.armState).append(',')
                 .append(record.sampleStatus?.replace(',', ';') ?: "")
                 .appendLine()

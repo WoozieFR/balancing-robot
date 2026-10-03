@@ -42,6 +42,15 @@ l'angle accéléromètre et filtré, le PD (erreur, brut, borné, saturation), l
 latence et les sorties moteur. **Arrêter capture** fige la session ; le CSV est
 alors partageable depuis Android ou via `/control-log.csv` sur la page web.
 
+Le Lot 6 ajoute une boucle externe de vitesse, active par défaut mais avec un
+gain `Kev` nul. Elle estime la vitesse du robot à partir de la moyenne signée
+des deux `PresentVelocity`, convertie en cm/s pour des roues de 40 mm et un
+rapport moteur/roue de 1. La consigne PD devient
+`trim + Kev × (vitesse_cible − vitesse_filtrée)`, bornée à ±10° par défaut.
+Consigne, gain, filtre, fréquence (50 Hz par défaut), limites et timeout sont
+réglables en direct depuis Android et le Web. Le diamètre et le rapport de
+transmission restent modifiables uniquement désarmé.
+
 ## Build et tests
 
 Depuis la racine du projet :
