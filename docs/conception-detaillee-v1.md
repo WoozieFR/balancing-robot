@@ -259,6 +259,9 @@ data class RobotConfig(
     val speedLoopRateHz: Int = 50,
     val speedFilterAlpha: Double = 0.5,
     val speedTargetAngleLimitDeg: Double = 10.0,
+    val speedIntegralGainDegPerCmPerSecSec: Double = 0.0,
+    val speedAbsoluteAngleLimitDeg: Double = 15.0,
+    val speedTargetSlewRateDegPerSec: Double = 30.0,
     val speedFeedbackTimeoutMs: Long = 100,
     val wheelDiameterMm: Double = 40.0,
     val driveRatio: Double = 1.0,
@@ -531,16 +534,24 @@ v_cm_s = PresentVelocity × (π × wheelDiameterMm / 10)
 v_mean = (v_left + v_right) / 2
 v_filtered = speedFilterAlpha × v_mean
              + (1 − speedFilterAlpha) × v_filtered_previous
-angle_target = clamp(targetDeg + Kev × (v_target − v_filtered), ±angleLimit)
+speed_error = v_target − v_filtered
+autoTrim = clamp(autoTrim + Ki × speed_error × dt, ±angleLimit)
+correction = clamp(Kev × speed_error + autoTrim, ±angleLimit)
+angle_target = slew(clamp(targetDeg + correction,
+                          ±speedAbsoluteAngleLimitDeg),
+                    speedTargetSlewRateDegPerSec)
 ```
 
 `driveRatio` exprime le nombre de tours moteur par tour de roue. L'EMA ne se
 met à jour que lorsque le numéro de séquence de la paire change. Le calcul de
 l'angle s'exécute à `speedLoopRateHz`, 50 Hz par défaut, sur le thread IMU ; il
-n'effectue aucune I/O. Si la paire dépasse `speedFeedbackTimeoutMs`, la cible
-reste gelée à la dernière valeur valide. Une récupération fraîche réinitialise
-l'EMA à la mesure courante afin d'éviter un transitoire fondé sur une ancienne
-vitesse.
+n'effectue aucune I/O. La correction est bornée autour du trim, puis la cible
+est limitée dans une enveloppe absolue et par un limiteur de pente. `Ki` apprend
+un auto-trim persistant avec anti-windup. Si la paire dépasse
+`speedFeedbackTimeoutMs`, l'intégrateur est remis à zéro et la cible revient
+progressivement vers le trim au lieu de rester gelée. Une récupération fraîche
+réinitialise l'EMA à la mesure courante afin d'éviter un transitoire fondé sur
+une ancienne vitesse.
 
 ## 9. Supervision de sécurité
 

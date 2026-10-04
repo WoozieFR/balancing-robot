@@ -43,12 +43,15 @@ latence et les sorties moteur. **Arrêter capture** fige la session ; le CSV est
 alors partageable depuis Android ou via `/control-log.csv` sur la page web.
 
 Le Lot 6 ajoute une boucle externe de vitesse, active par défaut mais avec un
-gain `Kev` nul. Elle estime la vitesse du robot à partir de la moyenne signée
-des deux `PresentVelocity`, convertie en cm/s pour des roues de 40 mm et un
-rapport moteur/roue de 1. La consigne PD devient
-`trim + Kev × (vitesse_cible − vitesse_filtrée)`, bornée à ±10° par défaut.
-Consigne, gain, filtre, fréquence (50 Hz par défaut), limites et timeout sont
-réglables en direct depuis Android et le Web. Le diamètre et le rapport de
+gain `Kev` et un intégrateur `Ki` nuls. Elle estime la vitesse du robot à partir
+de la moyenne signée des deux `PresentVelocity`, convertie en cm/s pour des
+roues de 40 mm et un rapport moteur/roue de 1. La correction est calculée autour
+du trim : `clamp(Kev × erreur + autoTrim, ±limite_correction)`, puis une limite
+absolue et une pente maximale sont appliquées à la cible PD. L'auto-trim
+intègre `Ki × erreur × dt` avec anti-windup ; un retour vitesse périmé efface
+la correction apprise et ramène progressivement la cible vers le trim.
+Consigne, gains, filtre, fréquence (50 Hz par défaut), limites, pente et timeout
+sont réglables en direct depuis Android et le Web. Le diamètre et le rapport de
 transmission restent modifiables uniquement désarmé.
 
 ## Build et tests

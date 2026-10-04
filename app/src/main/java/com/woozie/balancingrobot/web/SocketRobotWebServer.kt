@@ -172,7 +172,7 @@ class SocketRobotWebServer(
             "HTTP/1.1 $status $reason\r\n".toByteArray(Charsets.ISO_8859_1),
         )
         output.write("Content-Type: $contentType\r\n".toByteArray(Charsets.ISO_8859_1))
-        output.write("Content-Length: ${body.size}\r\nConnection: close\r\n\r\n".toByteArray(Charsets.ISO_8859_1))
+        output.write("Content-Length: ${body.size}\r\nCache-Control: no-store, max-age=0\r\nConnection: close\r\n\r\n".toByteArray(Charsets.ISO_8859_1))
         output.write(body)
         output.flush()
     }

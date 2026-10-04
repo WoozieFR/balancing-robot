@@ -588,10 +588,11 @@ service_state,arm_state,preset,fault_code,source
 ```
 
 Pour la boucle vitesse, le journal ajoute le diamètre, le rapport de
-transmission, la consigne et sa limite, `Kev`, l'alpha et la cadence demandée,
-les deux vitesses brutes, les deux conversions en cm/s, la moyenne, l'EMA,
-l'erreur, la correction angulaire, la cible PD effective, la saturation, l'âge
-du retour et les cadences mesurées.
+transmission, la consigne et sa limite, `Kev`, `Ki`, l'auto-trim, l'alpha, la
+cadence demandée, la limite de correction autour du trim, la limite absolue et
+la pente maximale, les deux vitesses brutes, les deux conversions en cm/s, la
+moyenne, l'EMA, l'erreur, la correction angulaire, la cible PD effective, la
+saturation, la limitation de pente, l'âge du retour et les cadences mesurées.
 
 Les colonnes non applicables à un événement restent vides. L'export réalise une
 copie cohérente du tampon et ne le bloque pas pendant toute la conversion.

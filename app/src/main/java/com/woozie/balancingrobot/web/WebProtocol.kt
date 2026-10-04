@@ -53,6 +53,7 @@ object WebProtocol {
                 "arm_manual",
                 "disarm",
                 "ack_fault",
+                "set_speed_target",
                 "update_parameters",
                 "arm_balance",
                 "disarm_balance",

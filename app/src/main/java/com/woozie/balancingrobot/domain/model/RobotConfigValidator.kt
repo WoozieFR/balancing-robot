@@ -56,6 +56,21 @@ object RobotConfigValidator {
             ) {
                 error("speedTargetAngleLimitDeg", "must be finite and in [1, 15] degrees")
             }
+            if (!config.speedIntegralGainDegPerCmPerSecSec.isFinite() ||
+                config.speedIntegralGainDegPerCmPerSecSec !in 0.0..2.0
+            ) {
+                error("speedIntegralGainDegPerCmPerSecSec", "must be finite and in [0, 2]")
+            }
+            if (!config.speedAbsoluteAngleLimitDeg.isFinite() ||
+                config.speedAbsoluteAngleLimitDeg !in 5.0..45.0
+            ) {
+                error("speedAbsoluteAngleLimitDeg", "must be finite and in [5, 45] degrees")
+            }
+            if (!config.speedTargetSlewRateDegPerSec.isFinite() ||
+                config.speedTargetSlewRateDegPerSec !in 1.0..180.0
+            ) {
+                error("speedTargetSlewRateDegPerSec", "must be finite and in [1, 180] degrees/s")
+            }
             if (config.speedFeedbackTimeoutMs !in 40..500) {
                 error("speedFeedbackTimeoutMs", "must be in [40, 500] ms")
             }

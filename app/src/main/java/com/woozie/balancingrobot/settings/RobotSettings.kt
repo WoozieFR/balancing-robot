@@ -40,6 +40,9 @@ object RobotSettings {
     private val speedLoopRateKey = intPreferencesKey("speed_loop_rate_hz")
     private val speedFilterAlphaKey = doublePreferencesKey("speed_filter_alpha")
     private val speedTargetAngleLimitKey = doublePreferencesKey("speed_target_angle_limit_deg")
+    private val speedIntegralGainKey = doublePreferencesKey("speed_integral_gain_deg_per_cmps_s")
+    private val speedAbsoluteAngleLimitKey = doublePreferencesKey("speed_absolute_angle_limit_deg")
+    private val speedTargetSlewRateKey = doublePreferencesKey("speed_target_slew_rate_deg_per_sec")
     private val speedFeedbackTimeoutKey = intPreferencesKey("speed_feedback_timeout_ms")
     private val wheelDiameterKey = doublePreferencesKey("wheel_diameter_mm")
     private val driveRatioKey = doublePreferencesKey("drive_ratio")
@@ -119,6 +122,12 @@ object RobotSettings {
             speedFilterAlpha = preferences[speedFilterAlphaKey] ?: defaults.speedFilterAlpha,
             speedTargetAngleLimitDeg = preferences[speedTargetAngleLimitKey]
                 ?: defaults.speedTargetAngleLimitDeg,
+            speedIntegralGainDegPerCmPerSecSec = preferences[speedIntegralGainKey]
+                ?: defaults.speedIntegralGainDegPerCmPerSecSec,
+            speedAbsoluteAngleLimitDeg = preferences[speedAbsoluteAngleLimitKey]
+                ?: defaults.speedAbsoluteAngleLimitDeg,
+            speedTargetSlewRateDegPerSec = preferences[speedTargetSlewRateKey]
+                ?: defaults.speedTargetSlewRateDegPerSec,
             speedFeedbackTimeoutMs = (preferences[speedFeedbackTimeoutKey]
                 ?: defaults.speedFeedbackTimeoutMs.toInt()).toLong(),
             wheelDiameterMm = preferences[wheelDiameterKey] ?: defaults.wheelDiameterMm,
@@ -158,6 +167,9 @@ object RobotSettings {
             preferences[speedLoopRateKey] = config.speedLoopRateHz
             preferences[speedFilterAlphaKey] = config.speedFilterAlpha
             preferences[speedTargetAngleLimitKey] = config.speedTargetAngleLimitDeg
+            preferences[speedIntegralGainKey] = config.speedIntegralGainDegPerCmPerSecSec
+            preferences[speedAbsoluteAngleLimitKey] = config.speedAbsoluteAngleLimitDeg
+            preferences[speedTargetSlewRateKey] = config.speedTargetSlewRateDegPerSec
             preferences[speedFeedbackTimeoutKey] = config.speedFeedbackTimeoutMs.toInt()
             preferences[wheelDiameterKey] = config.wheelDiameterMm
             preferences[driveRatioKey] = config.driveRatio

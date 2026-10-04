@@ -11,10 +11,11 @@
 - application des signes moteurs puis conversion en cm/s avec 4096 pas/tour,
   roues de 40 mm et rapport direct 1,0 par défaut ;
 - moyenne des roues, EMA réglable et boucle externe à 50 Hz par défaut ;
-- loi `angle = trim + Kev × (vitesse cible − vitesse filtrée)`, avec saturation
-  d'angle réglable ;
-- gel de la dernière cible sur retour périmé et réinitialisation propre du
-  filtre lors de la reprise ;
+- loi `correction = clamp(Kev × erreur + autoTrim, ±limite_correction)`, avec
+  auto-trim intégral `Ki × erreur × dt`, anti-windup, limite absolue et
+  limiteur de pente ;
+- retour progressif de la cible vers le trim et remise à zéro de l'auto-trim sur
+  retour périmé, puis réinitialisation propre du filtre lors de la reprise ;
 - activation, gains, limites, cadence et timeout modifiables en direct ;
 - réglages et diagnostics sur l'IHM Android et la page Web ;
 - export CSV de la configuration, des entrées, des conversions et de tous les
@@ -32,8 +33,9 @@ source tools/android-env.sh
 ./gradlew lintDebug
 ```
 
-Les tests purs couvrent conversion, signes, moyenne, EMA, cadence, saturation,
-gel sur donnée périmée, reprise et désactivation de la boucle. Le test Feetech
+Les tests purs couvrent conversion, signes, moyenne, EMA, cadence, saturation
+centrée sur le trim, auto-trim intégral, limite de pente, retour vers le trim
+sur donnée périmée, reprise et désactivation de la boucle. Le test Feetech
 couvre la lecture signée courte de `PresentVelocity`.
 
 ## Procédure matérielle restant à exécuter
@@ -43,8 +45,9 @@ couvre la lecture signée courte de `PresentVelocity`.
    droite ont le même signe physique et que la paire arrive près de 50 Hz.
 3. Vérifier la conversion : 4096 pas/s doit donner environ 12,57 cm/s avec une
    roue de 40 mm et un rapport 1,0.
-4. Arrêter une roue ou débrancher un moteur ; vérifier le gel de cible, puis le
-   défaut moteur confirmé par la télémétrie de santé.
+4. Arrêter une roue ou débrancher un moteur ; vérifier le retour progressif de
+   la cible vers le trim, puis le défaut moteur confirmé par la télémétrie de
+   santé.
 5. Au sol, partir de `Kev = 0`, augmenter progressivement et vérifier le signe
    de la correction avant toute recherche de performance.
 6. Enregistrer une session RAM, l'arrêter et contrôler toutes les colonnes
@@ -54,4 +57,4 @@ Aucune stabilité au sol ni cadence USB réelle n'est revendiquée tant que cett
 procédure n'a pas été réalisée sur le robot.
 
 APK : `dist/balancing-robot-debug.apk`  
-SHA-256 : `e10b2958fbdd93e4c14b545bc2ce8c8d280a8149dd1bd3cfdc1e671352fc5b43`
+SHA-256 : `d70344bd34861a101a935e01693cc8bceba186235e8429412575f377e0fc7c16`

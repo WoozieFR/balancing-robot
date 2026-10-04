@@ -52,6 +52,16 @@ class WebProtocolTest {
     }
 
     @Test
+    fun acceptsDedicatedSpeedTargetCommand() {
+        val result = WebProtocol.parseCommand(
+            "{\"v\":1,\"id\":\"s\",\"type\":\"set_speed_target\",\"payload\":{" +
+                "\"speedTargetCmPerSec\":4.5}}",
+        ) as ParseResult.Accepted
+
+        assertEquals(4.5, WebProtocol.payloadDouble(result.command, "speedTargetCmPerSec")!!, 1e-9)
+    }
+
+    @Test
     fun createsDiagnosticFrame() {
         val frame = WebProtocol.diagnostics("d", "{\"gyroRateHz\":200}")
 

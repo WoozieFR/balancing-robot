@@ -321,7 +321,7 @@ class RobotControlService : Service() {
         if (_state.value.motors.connected) configureMotors()
     }
 
-    fun updateRobotConfig(config: RobotConfig) {
+    fun updateRobotConfig(config: RobotConfig): Boolean {
         val validation = RobotConfigValidator.validate(config)
         val current = _state.value
         val currentArm = current.motors.armState
@@ -340,7 +340,7 @@ class RobotControlService : Service() {
             activeConfig.manualTimeoutMs != config.manualTimeoutMs ||
             activeConfig.wheelDiameterMm != config.wheelDiameterMm ||
             activeConfig.driveRatio != config.driveRatio
-        val targetLimit = if (config.speedLoopEnabled) config.speedTargetAngleLimitDeg else 15.0
+        val targetLimit = if (config.speedLoopEnabled) config.speedAbsoluteAngleLimitDeg else 15.0
         val forbiddenWhileArmed = currentArm == MotorArmState.BALANCE_ARMED &&
             (protectedChanged || kotlin.math.abs(config.targetDeg) > targetLimit)
         if (!validation.isValid || currentArm == MotorArmState.MANUAL_ARMED ||
@@ -353,7 +353,7 @@ class RobotControlService : Service() {
                 else -> "Réglages indisponibles pendant le mode manuel ou un défaut"
             }
             _state.update { it.copy(errorMessage = message) }
-            return
+            return false
         }
         val motorConfigChanged = activeConfig.motorIds != config.motorIds ||
             activeConfig.motorSigns != config.motorSigns ||
@@ -402,6 +402,7 @@ class RobotControlService : Service() {
             runCatching { RobotSettings.saveRobotConfig(applicationContext, config) }
         }
         if (motorConfigChanged && current.motors.connected) configureMotors()
+        return true
     }
 
     fun armBalance(safeTestConfirmed: Boolean) {
@@ -412,7 +413,7 @@ class RobotControlService : Service() {
             !SafetyRules.isGyroFresh(SystemClock.elapsedRealtimeNanos(), lastGyroReceivedNs, activeConfig.imuTimeoutMs) ||
             kotlin.math.abs(current.imu.estimatedAngleDeg) >= activeConfig.fallAngleDeg ||
             kotlin.math.abs(activeConfig.targetDeg) > if (activeConfig.speedLoopEnabled) {
-                activeConfig.speedTargetAngleLimitDeg
+                activeConfig.speedAbsoluteAngleLimitDeg
             } else 15.0
         ) {
             _state.update { it.copy(motors = it.motors.copy(errorMessage = "Prérequis d'équilibrage non satisfaits")) }
@@ -697,8 +698,8 @@ class RobotControlService : Service() {
                 trimDeg = config.targetDeg,
                 effectiveTargetDeg = if (config.speedLoopEnabled) {
                     config.targetDeg.coerceIn(
-                        -config.speedTargetAngleLimitDeg,
-                        config.speedTargetAngleLimitDeg,
+                        -config.speedAbsoluteAngleLimitDeg,
+                        config.speedAbsoluteAngleLimitDeg,
                     )
                 } else config.targetDeg,
             ),
@@ -1075,9 +1076,11 @@ class RobotControlService : Service() {
                     targetCmPerSec = output.targetCmPerSec,
                     errorCmPerSec = output.errorCmPerSec,
                     correctionDeg = output.correctionDeg,
+                    integralCorrectionDeg = output.integralCorrectionDeg,
                     trimDeg = output.trimDeg,
                     effectiveTargetDeg = output.effectiveTargetDeg,
                     saturated = output.saturated,
+                    slewLimited = output.slewLimited,
                 ))
             }
         }
@@ -1140,6 +1143,8 @@ class RobotControlService : Service() {
                 speedTargetCmPerSec = speedOutput?.targetCmPerSec,
                 speedErrorCmPerSec = speedOutput?.errorCmPerSec,
                 speedCorrectionDeg = speedOutput?.correctionDeg,
+                speedIntegralCorrectionDeg = speedOutput?.integralCorrectionDeg,
+                speedTargetSlewLimited = speedOutput?.slewLimited,
                 speedStale = speedOutput?.stale,
                 speedTargetSaturated = speedOutput?.saturated,
                 speedLoopActualRateHz = speedLoopActualRateHz,
@@ -1212,6 +1217,9 @@ class RobotControlService : Service() {
             put("speedLoopRateHz", config.speedLoopRateHz)
             put("speedFilterAlpha", config.speedFilterAlpha)
             put("speedTargetAngleLimitDeg", config.speedTargetAngleLimitDeg)
+            put("speedIntegralGainDegPerCmPerSecSec", config.speedIntegralGainDegPerCmPerSecSec)
+            put("speedAbsoluteAngleLimitDeg", config.speedAbsoluteAngleLimitDeg)
+            put("speedTargetSlewRateDegPerSec", config.speedTargetSlewRateDegPerSec)
             put("speedFeedbackTimeoutMs", config.speedFeedbackTimeoutMs)
             put("wheelDiameterMm", config.wheelDiameterMm)
             put("driveRatio", config.driveRatio)
@@ -1228,8 +1236,10 @@ class RobotControlService : Service() {
             speed.filteredCmPerSec?.let { put("speedFilteredCmPerSec", it) }
             speed.errorCmPerSec?.let { put("speedErrorCmPerSec", it) }
             put("speedCorrectionDeg", speed.correctionDeg)
+            put("speedIntegralCorrectionDeg", speed.integralCorrectionDeg)
             put("speedEffectiveTargetDeg", speed.effectiveTargetDeg)
             put("speedTargetSaturated", speed.saturated)
+            put("speedTargetSlewLimited", speed.slewLimited)
             put("vmax", config.vmax)
             put("motorControlMode", config.motorControlMode.name)
             put("pwmMax", config.pwmMax)
@@ -1300,6 +1310,20 @@ class RobotControlService : Service() {
                 acknowledgeMotorFault()
                 WebProtocol.ack(command.id, true, message = "Acquittement demandé")
             }
+            "set_speed_target" -> {
+                val target = WebProtocol.payloadDouble(command, "speedTargetCmPerSec")
+                if (target == null) {
+                    WebProtocol.ack(command.id, false, error = "SPEED_TARGET_REQUIRED")
+                } else {
+                    val applied = updateRobotConfig(_state.value.config.copy(speedTargetCmPerSec = target))
+                    WebProtocol.ack(
+                        command.id,
+                        applied,
+                        error = if (applied) null else "SPEED_TARGET_REJECTED",
+                        message = if (applied) "Consigne vitesse appliquée" else (_state.value.errorMessage ?: "Consigne vitesse refusée"),
+                    )
+                }
+            }
             "update_parameters" -> {
                 val axis = WebProtocol.payloadString(command, "axis")
                     ?.let { value -> runCatching { Axis.valueOf(value) }.getOrNull() }
@@ -1324,6 +1348,12 @@ class RobotControlService : Service() {
                         ?: _state.value.config.speedFilterAlpha,
                     speedTargetAngleLimitDeg = WebProtocol.payloadDouble(command, "speedTargetAngleLimitDeg")
                         ?: _state.value.config.speedTargetAngleLimitDeg,
+                    speedIntegralGainDegPerCmPerSecSec = WebProtocol.payloadDouble(command, "speedIntegralGainDegPerCmPerSecSec")
+                        ?: _state.value.config.speedIntegralGainDegPerCmPerSecSec,
+                    speedAbsoluteAngleLimitDeg = WebProtocol.payloadDouble(command, "speedAbsoluteAngleLimitDeg")
+                        ?: _state.value.config.speedAbsoluteAngleLimitDeg,
+                    speedTargetSlewRateDegPerSec = WebProtocol.payloadDouble(command, "speedTargetSlewRateDegPerSec")
+                        ?: _state.value.config.speedTargetSlewRateDegPerSec,
                     speedFeedbackTimeoutMs = (
                         WebProtocol.payloadInt(command, "speedFeedbackTimeoutMs")
                             ?: _state.value.config.speedFeedbackTimeoutMs.toInt()
@@ -1346,8 +1376,13 @@ class RobotControlService : Service() {
                     inhibitSafetyAutoDisarm = WebProtocol.payloadBoolean(command, "inhibitSafetyAutoDisarm")
                         ?: _state.value.config.inhibitSafetyAutoDisarm,
                 )
-                updateRobotConfig(config)
-                WebProtocol.ack(command.id, true, message = "Paramètres demandés")
+                val applied = updateRobotConfig(config)
+                WebProtocol.ack(
+                    command.id,
+                    applied,
+                    error = if (applied) null else "PARAMETERS_REJECTED",
+                    message = if (applied) "Paramètres appliqués" else (_state.value.errorMessage ?: "Paramètres refusés"),
+                )
             }
             "arm_balance" -> {
                 armBalance(WebProtocol.payloadBoolean(command, "safeTestConfirmed") == true)

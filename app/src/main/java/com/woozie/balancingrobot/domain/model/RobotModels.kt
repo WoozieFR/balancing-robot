@@ -85,6 +85,12 @@ data class RobotConfig(
     val speedLoopRateHz: Int = 50,
     val speedFilterAlpha: Double = 0.5,
     val speedTargetAngleLimitDeg: Double = 10.0,
+    /** Maximum velocity-loop correction around targetDeg (the trim). */
+    val speedIntegralGainDegPerCmPerSecSec: Double = 0.0,
+    /** Absolute target-angle safety envelope applied after trim + correction. */
+    val speedAbsoluteAngleLimitDeg: Double = 15.0,
+    /** Maximum target-angle movement per second. */
+    val speedTargetSlewRateDegPerSec: Double = 30.0,
     val speedFeedbackTimeoutMs: Long = 100,
     val wheelDiameterMm: Double = 40.0,
     /** Motor revolutions per wheel revolution. */

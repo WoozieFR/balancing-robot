@@ -3,6 +3,36 @@ const log = $('log');
 let socket = null;
 let lastDiagnostics = null;
 let parameterUpdateTimer = null;
+let pendingParameterExpiryTimer = null;
+const pendingParameters = new Map();
+const parameterCommandIds = new Set();
+
+const valuesMatch = (expected, actual) => {
+  if (typeof expected === 'number' && typeof actual === 'number') {
+    return Number.isFinite(expected) && Number.isFinite(actual) && Math.abs(expected - actual) < 1e-6;
+  }
+  return expected === actual;
+};
+
+const markParameterPending = (id, value) => {
+  pendingParameters.set(id, value);
+  if (pendingParameterExpiryTimer !== null) window.clearTimeout(pendingParameterExpiryTimer);
+  pendingParameterExpiryTimer = window.setTimeout(() => {
+    pendingParameterExpiryTimer = null;
+    if (pendingParameters.size === 0) return;
+    write('paramètres Web non confirmés : nouvelle lecture demandée');
+    pendingParameters.clear();
+    refresh();
+  }, 3000);
+};
+
+const clearPendingParameter = (id) => {
+  pendingParameters.delete(id);
+  if (pendingParameters.size === 0 && pendingParameterExpiryTimer !== null) {
+    window.clearTimeout(pendingParameterExpiryTimer);
+    pendingParameterExpiryTimer = null;
+  }
+};
 
 const write = (value) => {
   if (!log) return;
@@ -31,6 +61,15 @@ const syncRange = (id, value) => {
   if (!input) return;
   const editor = $(`${id}-number`);
   const output = $(`${id}-value`);
+  const pending = pendingParameters.get(id);
+  if (pending !== undefined) {
+    if (valuesMatch(pending, Number(value))) clearPendingParameter(id);
+    else {
+      if (output) output.textContent = Number(input.value).toFixed(2);
+      if (editor && document.activeElement !== editor) editor.value = input.value;
+      return;
+    }
+  }
   if (document.activeElement !== input) input.value = value;
   if (editor && document.activeElement !== editor) editor.value = value;
   if (output) output.textContent = id === 'imu-sign'
@@ -99,10 +138,11 @@ const renderDiagnostics = (diagnostics) => {
   text('speed-feedback-state', !diagnostics.speedLoopEnabled
     ? 'Boucle désactivée'
     : diagnostics.speedFeedbackStale
-      ? `Retour périmé · cible gelée · âge ${number(diagnostics.speedFeedbackAgeMs, ' ms')}`
-      : `Retour frais · ${number(diagnostics.speedFeedbackRateHz, ' Hz')}`);
+      ? `Retour périmé · retour progressif vers le trim · âge ${number(diagnostics.speedFeedbackAgeMs, ' ms')}`
+      : `Retour frais · ${number(diagnostics.speedFeedbackRateHz, ' Hz')}${diagnostics.speedTargetSlewLimited ? ' · pente limitée' : ''}`);
   text('speed-effective-target', number(diagnostics.speedEffectiveTargetDeg, '°'));
   text('speed-correction', number(diagnostics.speedCorrectionDeg, '°'));
+  text('speed-integral', number(diagnostics.speedIntegralCorrectionDeg, '°'));
 
   text('motor-state', `${armState} · ${diagnostics.motorConnected ? 'USB connecté' : 'USB arrêté'}`);
   text('motor-command', `${diagnostics.motorCommand ?? 0} · deadman ${diagnostics.motorDeadmanHeld ? 'tenu' : 'relâché'}`);
@@ -138,17 +178,20 @@ const renderDiagnostics = (diagnostics) => {
     ['speed-target-limit', diagnostics.speedTargetLimitCmPerSec], ['speed-target', diagnostics.speedTargetCmPerSec],
     ['speed-kev', diagnostics.speedKevDegPerCmPerSec], ['speed-loop-rate', diagnostics.speedLoopRateHz],
     ['speed-filter-alpha', diagnostics.speedFilterAlpha], ['speed-angle-limit', diagnostics.speedTargetAngleLimitDeg],
+    ['speed-integral-gain', diagnostics.speedIntegralGainDegPerCmPerSecSec],
+    ['speed-absolute-angle-limit', diagnostics.speedAbsoluteAngleLimitDeg],
+    ['speed-target-slew', diagnostics.speedTargetSlewRateDegPerSec],
     ['speed-feedback-timeout', diagnostics.speedFeedbackTimeoutMs], ['wheel-diameter', diagnostics.wheelDiameterMm],
     ['drive-ratio', diagnostics.driveRatio], ['zero-offset', diagnostics.zeroOffsetDeg], ['vmax', diagnostics.vmax],
     ['pwm-max', diagnostics.pwmMax], ['torque-limit', diagnostics.torqueLimit], ['imu-timeout', diagnostics.imuTimeoutMs],
     ['fall-angle', diagnostics.fallAngleDeg], ['fall-duration', diagnostics.fallDurationMs], ['manual-timeout', diagnostics.manualTimeoutMs]]
     .forEach(([id, value]) => syncRange(id, value));
-  if ($('axis') && document.activeElement !== $('axis') && diagnostics.axis) $('axis').value = diagnostics.axis;
-  if ($('imu-sign') && diagnostics.imuSign !== undefined && document.activeElement !== $('imu-sign')) $('imu-sign').value = diagnostics.imuSign;
-  if ($('speed-loop-enabled') && document.activeElement !== $('speed-loop-enabled')) $('speed-loop-enabled').checked = Boolean(diagnostics.speedLoopEnabled);
-  if ($('motor-control-mode') && document.activeElement !== $('motor-control-mode') && diagnostics.motorControlMode) $('motor-control-mode').value = diagnostics.motorControlMode;
+  if ($('axis') && document.activeElement !== $('axis') && diagnostics.axis && !pendingParameters.has('axis')) $('axis').value = diagnostics.axis;
+  if ($('imu-sign') && diagnostics.imuSign !== undefined && document.activeElement !== $('imu-sign') && !pendingParameters.has('imu-sign')) $('imu-sign').value = diagnostics.imuSign;
+  if ($('speed-loop-enabled') && document.activeElement !== $('speed-loop-enabled') && !pendingParameters.has('speed-loop-enabled')) $('speed-loop-enabled').checked = Boolean(diagnostics.speedLoopEnabled);
+  if ($('motor-control-mode') && document.activeElement !== $('motor-control-mode') && diagnostics.motorControlMode && !pendingParameters.has('motor-control-mode')) $('motor-control-mode').value = diagnostics.motorControlMode;
   if ($('safety-inhibition') && document.activeElement !== $('safety-inhibition')) {
-    $('safety-inhibition').checked = Boolean(diagnostics.inhibitSafetyAutoDisarm);
+    if (!pendingParameters.has('safety-inhibition')) $('safety-inhibition').checked = Boolean(diagnostics.inhibitSafetyAutoDisarm);
   }
 
 };
@@ -168,9 +211,10 @@ const sendCommand = (type, payload = {}) => {
   const id = `web-${Date.now()}-${Math.random().toString(16).slice(2)}`;
   if (!socket || socket.readyState !== WebSocket.OPEN) {
     write('commande ignorée : WebSocket non connecté');
-    return;
+    return null;
   }
   socket.send(JSON.stringify({ v: 1, id, type, payload }));
+  return id;
 };
 
 const currentParameters = () => ({
@@ -187,6 +231,9 @@ const currentParameters = () => ({
   speedLoopRateHz: Number($('speed-loop-rate').value),
   speedFilterAlpha: Number($('speed-filter-alpha').value),
   speedTargetAngleLimitDeg: Number($('speed-angle-limit').value),
+  speedIntegralGainDegPerCmPerSecSec: Number($('speed-integral-gain').value),
+  speedAbsoluteAngleLimitDeg: Number($('speed-absolute-angle-limit').value),
+  speedTargetSlewRateDegPerSec: Number($('speed-target-slew').value),
   speedFeedbackTimeoutMs: Number($('speed-feedback-timeout').value),
   wheelDiameterMm: Number($('wheel-diameter').value),
   driveRatio: Number($('drive-ratio').value),
@@ -206,7 +253,11 @@ const scheduleParameterUpdate = () => {
   if (parameterUpdateTimer !== null) window.clearTimeout(parameterUpdateTimer);
   parameterUpdateTimer = window.setTimeout(() => {
     parameterUpdateTimer = null;
-    sendCommand('update_parameters', currentParameters());
+    const speedTargetOnly = pendingParameters.size === 1 && pendingParameters.has('speed-target');
+    const id = speedTargetOnly
+      ? sendCommand('set_speed_target', { speedTargetCmPerSec: Number($('speed-target').value) })
+      : sendCommand('update_parameters', currentParameters());
+    if (id) parameterCommandIds.add(id);
   }, 80);
 };
 
@@ -215,7 +266,9 @@ const updateSpeedTargetRange = () => {
   $('speed-target').min = -limit;
   $('speed-target').max = limit;
   const target = Number($('speed-target').value);
-  $('speed-target').value = Math.min(limit, Math.max(-limit, target));
+  const nextTarget = Math.min(limit, Math.max(-limit, target));
+  $('speed-target').value = nextTarget;
+  if (nextTarget !== target) markParameterPending('speed-target', nextTarget);
   if ($('speed-target-number')) {
     $('speed-target-number').min = -limit;
     $('speed-target-number').max = limit;
@@ -225,8 +278,11 @@ const updateSpeedTargetRange = () => {
 
 const clampTargetToAngleLimit = () => {
   if (!$('speed-loop-enabled').checked) return;
-  const limit = Number($('speed-angle-limit').value);
-  $('target').value = Math.min(limit, Math.max(-limit, Number($('target').value)));
+  const limit = Number($('speed-absolute-angle-limit').value);
+  const target = Number($('target').value);
+  const nextTarget = Math.min(limit, Math.max(-limit, target));
+  $('target').value = nextTarget;
+  if (nextTarget !== target) markParameterPending('target', nextTarget);
   if ($('target-number')) $('target-number').value = $('target').value;
 };
 
@@ -246,13 +302,16 @@ const attachPrecisionInput = (range) => {
     const output = $(`${id}-value`);
     if (output) output.textContent = id === 'imu-sign' ? (Number(range.value) > 0 ? '+1' : '−1') : Number(range.value).toFixed(2);
   };
-  range.addEventListener('input', () => {
+  const applyRangeChange = () => {
     editor.value = range.value;
     updateOutput();
+    markParameterPending(id, Number(range.value));
     if (id === 'speed-target-limit') updateSpeedTargetRange();
-    if (id === 'speed-angle-limit') clampTargetToAngleLimit();
+    if (id === 'speed-absolute-angle-limit') clampTargetToAngleLimit();
     scheduleParameterUpdate();
-  });
+  };
+  range.addEventListener('input', applyRangeChange);
+  range.addEventListener('change', applyRangeChange);
   const applyEditor = () => {
     const value = Number(editor.value);
     if (!Number.isFinite(value)) return;
@@ -264,14 +323,14 @@ const attachPrecisionInput = (range) => {
   editor.addEventListener('change', applyEditor);
 };
 
-const parameterIds = ['alpha', 'target', 'kp', 'kd', 'speed-target', 'speed-target-limit', 'speed-kev', 'speed-loop-rate', 'speed-filter-alpha', 'speed-angle-limit', 'speed-feedback-timeout', 'zero-offset', 'vmax', 'pwm-max', 'torque-limit', 'imu-timeout', 'fall-angle', 'fall-duration', 'manual-timeout', 'wheel-diameter', 'drive-ratio'];
+const parameterIds = ['alpha', 'target', 'kp', 'kd', 'speed-target', 'speed-target-limit', 'speed-kev', 'speed-loop-rate', 'speed-filter-alpha', 'speed-angle-limit', 'speed-integral-gain', 'speed-absolute-angle-limit', 'speed-target-slew', 'speed-feedback-timeout', 'zero-offset', 'vmax', 'pwm-max', 'torque-limit', 'imu-timeout', 'fall-angle', 'fall-duration', 'manual-timeout', 'wheel-diameter', 'drive-ratio'];
 parameterIds.forEach((id) => attachPrecisionInput($(id)));
 
-$('speed-loop-enabled').addEventListener('change', () => { clampTargetToAngleLimit(); scheduleParameterUpdate(); });
-$('axis').addEventListener('change', scheduleParameterUpdate);
-$('imu-sign').addEventListener('change', scheduleParameterUpdate);
-$('motor-control-mode').addEventListener('change', scheduleParameterUpdate);
-$('safety-inhibition').addEventListener('change', scheduleParameterUpdate);
+$('speed-loop-enabled').addEventListener('change', () => { markParameterPending('speed-loop-enabled', $('speed-loop-enabled').checked); clampTargetToAngleLimit(); scheduleParameterUpdate(); });
+$('axis').addEventListener('change', () => { markParameterPending('axis', $('axis').value); scheduleParameterUpdate(); });
+$('imu-sign').addEventListener('change', () => { markParameterPending('imu-sign', Number($('imu-sign').value)); scheduleParameterUpdate(); });
+$('motor-control-mode').addEventListener('change', () => { markParameterPending('motor-control-mode', $('motor-control-mode').value); scheduleParameterUpdate(); });
+$('safety-inhibition').addEventListener('change', () => { markParameterPending('safety-inhibition', $('safety-inhibition').checked); scheduleParameterUpdate(); });
 
 $('start-recording').addEventListener('click', () => sendCommand('start_recording'));
 $('stop-recording').addEventListener('click', () => sendCommand('stop_recording'));
@@ -334,7 +393,15 @@ const connectSocket = () => {
     socket.addEventListener('message', (event) => {
       try {
         const message = JSON.parse(event.data);
-        if (message.type === 'ack' && message.message) write(`ack ${message.id || ''}: ${message.message}`);
+        if (message.type === 'ack') {
+          if (parameterCommandIds.delete(message.id) && message.ok === false) {
+            pendingParameters.clear();
+            if (pendingParameterExpiryTimer !== null) window.clearTimeout(pendingParameterExpiryTimer);
+            pendingParameterExpiryTimer = null;
+            refresh();
+          }
+          if (message.message || message.ok === false) write(`ack ${message.id || ''}: ${message.message || message.error || (message.ok ? 'OK' : 'refusé')}`);
+        }
         else if (message.type === 'error') write(`ws error: ${message.code} ${message.message}`);
       } catch (_) { write(`ws: ${event.data}`); }
     });

@@ -850,7 +850,7 @@ private fun BalanceTuningCard(
         "Trim d'angle (°)",
         draft.targetDeg,
         if (armState == MotorArmState.BALANCE_ARMED) {
-            val limit = if (draft.speedLoopEnabled) draft.speedTargetAngleLimitDeg.toFloat() else 15f
+            val limit = if (draft.speedLoopEnabled) draft.speedAbsoluteAngleLimitDeg.toFloat() else 15f
             -limit..limit
         } else -180f..180f,
         if (armState == MotorArmState.BALANCE_ARMED) 59 else 359,
@@ -872,8 +872,8 @@ private fun BalanceTuningCard(
                     speedLoopEnabled = enabled,
                     targetDeg = if (enabled) {
                         draft.targetDeg.coerceIn(
-                            -draft.speedTargetAngleLimitDeg,
-                            draft.speedTargetAngleLimitDeg,
+                            -draft.speedAbsoluteAngleLimitDeg,
+                            draft.speedAbsoluteAngleLimitDeg,
                         )
                     } else draft.targetDeg,
                 ))
@@ -913,12 +913,28 @@ private fun BalanceTuningCard(
     ParameterSlider("Alpha filtre vitesse", draft.speedFilterAlpha, 0.01f..1f, 98, liveEditable) {
         change(draft.copy(speedFilterAlpha = it.toDouble()))
     }
-    ParameterSlider("Limite cible d'angle (°)", draft.speedTargetAngleLimitDeg, 1f..15f, 139, liveEditable) {
+    ParameterSlider("Limite correction autour du trim (°)", draft.speedTargetAngleLimitDeg, 1f..15f, 139, liveEditable) {
         val limit = it.toDouble()
         change(draft.copy(
             speedTargetAngleLimitDeg = limit,
+            targetDeg = if (draft.speedLoopEnabled) draft.targetDeg.coerceIn(
+                -draft.speedAbsoluteAngleLimitDeg,
+                draft.speedAbsoluteAngleLimitDeg,
+            ) else draft.targetDeg,
+        ))
+    }
+    ParameterSlider("Ki auto-trim (° / (cm/s·s))", draft.speedIntegralGainDegPerCmPerSecSec, 0f..2f, 199, liveEditable) {
+        change(draft.copy(speedIntegralGainDegPerCmPerSecSec = it.toDouble()))
+    }
+    ParameterSlider("Limite absolue cible (°)", draft.speedAbsoluteAngleLimitDeg, 5f..45f, 399, liveEditable) {
+        val limit = it.toDouble()
+        change(draft.copy(
+            speedAbsoluteAngleLimitDeg = limit,
             targetDeg = if (draft.speedLoopEnabled) draft.targetDeg.coerceIn(-limit, limit) else draft.targetDeg,
         ))
+    }
+    ParameterSlider("Pente cible maximale (°/s)", draft.speedTargetSlewRateDegPerSec, 1f..180f, 179, liveEditable) {
+        change(draft.copy(speedTargetSlewRateDegPerSec = it.toDouble()))
     }
     ParameterSlider("Timeout retour vitesse (ms)", draft.speedFeedbackTimeoutMs.toFloat(), 40f..500f, 91, liveEditable) {
         change(draft.copy(speedFeedbackTimeoutMs = it.toLong()))
@@ -956,7 +972,7 @@ private fun BalanceTuningCard(
         Button(
             onClick = { onArmBalance(safeTestConfirmed) },
             enabled = armState == MotorArmState.READY && safeTestConfirmed &&
-                abs(draft.targetDeg) <= if (draft.speedLoopEnabled) draft.speedTargetAngleLimitDeg else 15.0,
+                abs(draft.targetDeg) <= if (draft.speedLoopEnabled) draft.speedAbsoluteAngleLimitDeg else 15.0,
         ) { Text("Armer équilibrage") }
         OutlinedButton(
             onClick = onDisarmBalance,

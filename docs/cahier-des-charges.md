@@ -284,18 +284,21 @@ L'application DOIT fournir au minimum les préréglages suivants :
   vitesse_droite) / 2`.
 - **VEL-005 —** La vitesse moyenne DOIT être filtrée par une EMA dont l'alpha
   est réglable, avec `0,5` par défaut.
-- **VEL-006 —** La loi de commande DOIT être
-  `angle_cible = trim + Kev × (vitesse_cible − vitesse_filtrée)`.
-- **VEL-007 —** L'angle cible effectif DOIT être saturé symétriquement, à
-  ±10° par défaut et dans une plage réglable de ±1° à ±15°.
+- **VEL-006 —** La loi de commande DOIT être calculée autour du trim :
+  `correction = clamp(Kev × erreur_vitesse + autoTrim, ±limite_correction)`,
+  avec `autoTrim += Ki × erreur_vitesse × dt` et anti-windup.
+- **VEL-007 —** La cible DOIT ensuite respecter une limite absolue symétrique
+  (±15° par défaut) et une pente maximale réglable (30°/s par défaut).
 - **VEL-008 —** La boucle DOIT fonctionner à 50 Hz par défaut, avec une cadence
   réglable de 5 à 100 Hz. Une cadence supérieure à celle du retour moteur PEUT
   réutiliser la dernière paire fraîche sans refiltrer deux fois la même mesure.
-- **VEL-009 —** Une paire de vitesses périmée DOIT geler le dernier angle cible
-  valide. Avant la première paire valide, la cible vaut le trim borné.
-- **VEL-010 —** La consigne, `Kev`, les limites, l'alpha, la cadence et le
-  timeout DOIVENT être modifiables en direct pendant l'équilibrage. Le diamètre
-  de roue et le rapport de transmission exigent un désarmement.
+- **VEL-009 —** Une paire de vitesses périmée DOIT remettre l'auto-trim à zéro
+  et ramener progressivement la cible vers le trim. Avant la première paire
+  valide, la cible vaut le trim borné.
+- **VEL-010 —** La consigne, `Kev`, `Ki`, les limites, la pente, l'alpha, la
+  cadence et le timeout DOIVENT être modifiables en direct pendant
+  l'équilibrage. Le diamètre de roue et le rapport de transmission exigent un
+  désarmement.
 - **VEL-011 —** Toutes les entrées, conversions, valeurs filtrées, erreurs,
   corrections, saturations, cadences et âges DOIVENT être affichables et
   exportables dans le CSV de session.

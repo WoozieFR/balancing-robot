@@ -16,7 +16,9 @@ data class SpeedLoopDiagnosticState(
     val targetCmPerSec: Double = 0.0,
     val errorCmPerSec: Double? = null,
     val correctionDeg: Double = 0.0,
+    val integralCorrectionDeg: Double = 0.0,
     val trimDeg: Double = 0.0,
     val effectiveTargetDeg: Double = 0.0,
     val saturated: Boolean = false,
+    val slewLimited: Boolean = false,
 )
