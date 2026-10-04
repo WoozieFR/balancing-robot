@@ -389,6 +389,7 @@ class RobotControlService : Service() {
                 speedLoop = state.speedLoop.copy(
                     enabled = config.speedLoopEnabled,
                     targetCmPerSec = config.speedTargetCmPerSec,
+                    appliedTargetCmPerSec = config.speedTargetCmPerSec,
                     trimDeg = config.targetDeg,
                 ),
                 motors = if (motorConfigChanged) state.motors.copy(
@@ -1197,6 +1198,8 @@ class RobotControlService : Service() {
                     meanCmPerSec = output.meanCmPerSec,
                     filteredCmPerSec = output.filteredCmPerSec,
                     targetCmPerSec = output.targetCmPerSec,
+                    appliedTargetCmPerSec = output.appliedTargetCmPerSec,
+                    speedCommandSlewLimited = output.speedCommandSlewLimited,
                     errorCmPerSec = output.errorCmPerSec,
                     correctionDeg = output.correctionDeg,
                     integralCorrectionDeg = output.integralCorrectionDeg,
@@ -1362,6 +1365,7 @@ class RobotControlService : Service() {
             put("speedLoopEnabled", config.speedLoopEnabled)
             put("speedTargetCmPerSec", config.speedTargetCmPerSec)
             put("speedTargetLimitCmPerSec", config.speedTargetLimitCmPerSec)
+            put("speedTargetSlewRateCmPerSec", config.speedTargetSlewRateCmPerSec)
             put("speedKevDegPerCmPerSec", config.speedKevDegPerCmPerSec)
             put("speedLoopRateHz", config.speedLoopRateHz)
             put("speedFilterAlpha", config.speedFilterAlpha)
@@ -1375,6 +1379,8 @@ class RobotControlService : Service() {
             put("wheelDiameterMm", config.wheelDiameterMm)
             put("driveRatio", config.driveRatio)
             put("speedFeedbackStale", speed.stale)
+            put("speedAppliedTargetCmPerSec", speed.appliedTargetCmPerSec)
+            put("speedCommandSlewLimited", speed.speedCommandSlewLimited)
             put("speedFeedbackRateHz", speed.feedbackRateHz)
             put("speedLoopActualRateHz", speed.loopRateHz)
             speed.feedbackSequence?.let { put("speedFeedbackSequence", it) }
@@ -1497,6 +1503,8 @@ class RobotControlService : Service() {
                         ?: _state.value.config.speedTargetCmPerSec,
                     speedTargetLimitCmPerSec = WebProtocol.payloadDouble(command, "speedTargetLimitCmPerSec")
                         ?: _state.value.config.speedTargetLimitCmPerSec,
+                    speedTargetSlewRateCmPerSec = WebProtocol.payloadDouble(command, "speedTargetSlewRateCmPerSec")
+                        ?: _state.value.config.speedTargetSlewRateCmPerSec,
                     speedKevDegPerCmPerSec = WebProtocol.payloadDouble(command, "speedKevDegPerCmPerSec")
                         ?: _state.value.config.speedKevDegPerCmPerSec,
                     speedLoopRateHz = WebProtocol.payloadInt(command, "speedLoopRateHz")

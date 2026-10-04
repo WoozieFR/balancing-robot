@@ -104,7 +104,7 @@ class ControlSessionLog(private val capacity: Int = 100_000) {
                 "gyro_x_dps,gyro_y_dps,gyro_z_dps,accel_angle_deg,estimated_angle_deg," +
                 "gyro_rate_dps,dt_s,schema_version,axis,imu_sign,zero_offset_deg,alpha,angle_trim_deg,target_deg,kp,kd," +
                 "speed_loop_enabled,speed_target_cmps,speed_target_limit_cmps,speed_kev_deg_per_cmps," +
-                "speed_loop_rate_hz,speed_filter_alpha,speed_target_angle_limit_deg," +
+                "speed_target_slew_rate_cm_per_sec,speed_loop_rate_hz,speed_filter_alpha,speed_target_angle_limit_deg," +
                 "speed_integral_gain_deg_per_cmps_s,speed_absolute_angle_limit_deg,speed_target_slew_rate_deg_per_sec," +
                 "speed_feedback_timeout_ms," +
                 "yaw_target_dps,yaw_kp_command_per_dps," +
@@ -147,6 +147,7 @@ class ControlSessionLog(private val capacity: Int = 100_000) {
                 .append(record.speedLoopEnabled ?: config.speedLoopEnabled).append(',')
                 .append(record.speedTargetCmPerSec ?: config.speedTargetCmPerSec).append(',')
                 .append(config.speedTargetLimitCmPerSec).append(',')
+                .append(config.speedTargetSlewRateCmPerSec).append(',')
                 .append(config.speedKevDegPerCmPerSec).append(',')
                 .append(config.speedLoopRateHz).append(',')
                 .append(config.speedFilterAlpha).append(',')

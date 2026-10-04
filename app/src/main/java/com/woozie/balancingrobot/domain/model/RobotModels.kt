@@ -85,6 +85,8 @@ data class RobotConfig(
     val speedLoopEnabled: Boolean = true,
     val speedTargetCmPerSec: Double = 0.0,
     val speedTargetLimitCmPerSec: Double = 10.0,
+    /** Maximum speed-target movement per second. */
+    val speedTargetSlewRateCmPerSec: Double = 20.0,
     val speedKevDegPerCmPerSec: Double = 0.0,
     val speedLoopRateHz: Int = 50,
     val speedFilterAlpha: Double = 0.5,

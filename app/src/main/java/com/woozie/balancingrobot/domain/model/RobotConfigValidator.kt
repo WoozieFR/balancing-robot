@@ -40,6 +40,11 @@ object RobotConfigValidator {
             ) {
                 error("speedTargetCmPerSec", "must be within the configured speed target limit")
             }
+            if (!config.speedTargetSlewRateCmPerSec.isFinite() ||
+                config.speedTargetSlewRateCmPerSec !in 1.0..100.0
+            ) {
+                error("speedTargetSlewRateCmPerSec", "must be finite and in [1, 100] cm/s²")
+            }
             if (!config.speedKevDegPerCmPerSec.isFinite() ||
                 config.speedKevDegPerCmPerSec !in 0.0..2.0
             ) {

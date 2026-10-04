@@ -140,6 +140,30 @@ class VelocityOuterLoopTest {
     }
 
     @Test
+    fun speedTargetSlewRateLimitsLiveSpeedCommandChanges() {
+        val loop = VelocityOuterLoop(config(
+            speedTargetCmPerSec = 0.0,
+            speedTargetSlewRateCmPerSec = 10.0,
+            speedLoopRateHz = 50,
+        ))
+        val initial = loop.step(
+            1_000_000_000L,
+            feedback(1, 0, 0, 995_000_000L),
+            targetCmPerSec = 0.0,
+        )
+        val changed = loop.step(
+            1_020_000_000L,
+            feedback(2, 0, 0, 1_015_000_000L),
+            targetCmPerSec = 5.0,
+        )
+
+        assertEquals(0.0, initial.appliedTargetCmPerSec, 1e-9)
+        assertEquals(5.0, changed.targetCmPerSec, 1e-9)
+        assertEquals(0.2, changed.appliedTargetCmPerSec, 1e-9)
+        assertTrue(changed.speedCommandSlewLimited)
+    }
+
+    @Test
     fun disabledLoopUsesTrimWithoutClamping() {
         val loop = VelocityOuterLoop(config(speedLoopEnabled = false, targetDeg = 12.0))
 
@@ -153,6 +177,7 @@ class VelocityOuterLoopTest {
         targetDeg: Double = 0.0,
         speedLoopEnabled: Boolean = true,
         speedTargetCmPerSec: Double = 5.0,
+        speedTargetSlewRateCmPerSec: Double = 20.0,
         speedKevDegPerCmPerSec: Double = 0.0,
         speedLoopRateHz: Int = 50,
         speedFilterAlpha: Double = 0.5,
@@ -165,6 +190,7 @@ class VelocityOuterLoopTest {
         targetDeg = targetDeg,
         speedLoopEnabled = speedLoopEnabled,
         speedTargetCmPerSec = speedTargetCmPerSec,
+        speedTargetSlewRateCmPerSec = speedTargetSlewRateCmPerSec,
         speedKevDegPerCmPerSec = speedKevDegPerCmPerSec,
         speedLoopRateHz = speedLoopRateHz,
         speedFilterAlpha = speedFilterAlpha,

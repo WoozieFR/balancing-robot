@@ -137,9 +137,10 @@ const renderDiagnostics = (diagnostics) => {
   text('speed-filtered', number(diagnostics.speedFilteredCmPerSec, ' cm/s'));
   text('speed-feedback-state', !diagnostics.speedLoopEnabled
     ? 'Boucle désactivée'
-    : diagnostics.speedFeedbackStale
-      ? `Retour périmé · retour progressif vers le trim · âge ${number(diagnostics.speedFeedbackAgeMs, ' ms')}`
-      : `Retour frais · ${number(diagnostics.speedFeedbackRateHz, ' Hz')}${diagnostics.speedTargetSlewLimited ? ' · pente limitée' : ''}`);
+      : diagnostics.speedFeedbackStale
+        ? `Retour périmé · retour progressif vers le trim · âge ${number(diagnostics.speedFeedbackAgeMs, ' ms')}`
+      : `Retour frais · ${number(diagnostics.speedFeedbackRateHz, ' Hz')}${diagnostics.speedCommandSlewLimited ? ' · rampe consigne active' : ''}`);
+  text('speed-applied-target', number(diagnostics.speedAppliedTargetCmPerSec, ' cm/s'));
   text('speed-effective-target', number(diagnostics.speedEffectiveTargetDeg, '°'));
   text('speed-correction', number(diagnostics.speedCorrectionDeg, '°'));
   text('speed-integral', number(diagnostics.speedIntegralCorrectionDeg, '°'));
@@ -189,6 +190,7 @@ const renderDiagnostics = (diagnostics) => {
   }
   [['alpha', diagnostics.alpha], ['target', diagnostics.targetDeg], ['kp', diagnostics.kp], ['kd', diagnostics.kd],
     ['speed-target-limit', diagnostics.speedTargetLimitCmPerSec], ['speed-target', diagnostics.speedTargetCmPerSec],
+    ['speed-target-rate', diagnostics.speedTargetSlewRateCmPerSec],
     ['speed-kev', diagnostics.speedKevDegPerCmPerSec], ['speed-loop-rate', diagnostics.speedLoopRateHz],
     ['speed-filter-alpha', diagnostics.speedFilterAlpha], ['speed-angle-limit', diagnostics.speedTargetAngleLimitDeg],
     ['speed-integral-gain', diagnostics.speedIntegralGainDegPerCmPerSecSec],
@@ -243,6 +245,7 @@ const parameterKeyById = {
   'speed-loop-enabled': 'speedLoopEnabled',
   'speed-target': 'speedTargetCmPerSec',
   'speed-target-limit': 'speedTargetLimitCmPerSec',
+  'speed-target-rate': 'speedTargetSlewRateCmPerSec',
   'speed-kev': 'speedKevDegPerCmPerSec',
   'speed-loop-rate': 'speedLoopRateHz',
   'speed-filter-alpha': 'speedFilterAlpha',

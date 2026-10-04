@@ -27,6 +27,8 @@ data class VelocityLoopOutput(
     val meanCmPerSec: Double? = null,
     val filteredCmPerSec: Double? = null,
     val targetCmPerSec: Double,
+    val appliedTargetCmPerSec: Double = targetCmPerSec,
+    val speedCommandSlewLimited: Boolean = false,
     val errorCmPerSec: Double? = null,
     val correctionDeg: Double = 0.0,
     val integralCorrectionDeg: Double = 0.0,
@@ -61,6 +63,7 @@ class VelocityOuterLoop(initialConfig: RobotConfig) {
     private var wasStale = true
     private var integralCorrectionDeg = 0.0
     private var currentTargetDeg: Double? = null
+    private var currentSpeedTargetCmPerSec: Double? = null
     private var lastOutput: VelocityLoopOutput? = null
 
     fun updateConfig(newConfig: RobotConfig) {
@@ -76,6 +79,7 @@ class VelocityOuterLoop(initialConfig: RobotConfig) {
         if (!valid.speedLoopEnabled || modeChanged) {
             integralCorrectionDeg = 0.0
             currentTargetDeg = null
+            currentSpeedTargetCmPerSec = null
         } else {
             integralCorrectionDeg = integralCorrectionDeg.coerceIn(
                 -valid.speedTargetAngleLimitDeg,
@@ -88,6 +92,7 @@ class VelocityOuterLoop(initialConfig: RobotConfig) {
             wasStale = true
             integralCorrectionDeg = 0.0
             currentTargetDeg = null
+            currentSpeedTargetCmPerSec = null
             lastOutput = null
         }
     }
@@ -99,6 +104,7 @@ class VelocityOuterLoop(initialConfig: RobotConfig) {
         wasStale = true
         integralCorrectionDeg = 0.0
         currentTargetDeg = null
+        currentSpeedTargetCmPerSec = null
         lastOutput = null
     }
 
@@ -119,6 +125,16 @@ class VelocityOuterLoop(initialConfig: RobotConfig) {
         val dtSec = if (previousTickNs > 0L) {
             ((nowNs - previousTickNs).toDouble() / 1_000_000_000.0).coerceIn(0.0, 0.5)
         } else 0.0
+        val requestedSpeedTarget = targetCmPerSec.coerceIn(
+            -config.speedTargetLimitCmPerSec,
+            config.speedTargetLimitCmPerSec,
+        )
+        val appliedSpeedTarget = approachSpeedTarget(
+            requestedSpeedTarget,
+            dtSec,
+            initializeAtDesired = previousTickNs == 0L,
+        )
+        val speedCommandSlewLimited = appliedSpeedTarget != requestedSpeedTarget
 
         val ageNs = feedback?.let {
             nowNs - min(it.leftTimestampNs, it.rightTimestampNs)
@@ -140,7 +156,9 @@ class VelocityOuterLoop(initialConfig: RobotConfig) {
                 enabled = config.speedLoopEnabled,
                 updated = true,
                 stale = true,
-                targetCmPerSec = targetCmPerSec,
+                targetCmPerSec = requestedSpeedTarget,
+                appliedTargetCmPerSec = appliedSpeedTarget,
+                speedCommandSlewLimited = speedCommandSlewLimited,
                 trimDeg = trim,
                 effectiveTargetDeg = effective,
             )).copy(
@@ -148,7 +166,9 @@ class VelocityOuterLoop(initialConfig: RobotConfig) {
                 updated = true,
                 stale = true,
                 feedbackAgeMs = ageNs?.coerceAtLeast(0L)?.div(1_000_000.0),
-                targetCmPerSec = targetCmPerSec,
+                targetCmPerSec = requestedSpeedTarget,
+                appliedTargetCmPerSec = appliedSpeedTarget,
+                speedCommandSlewLimited = speedCommandSlewLimited,
                 correctionDeg = effective - trim,
                 integralCorrectionDeg = 0.0,
                 trimDeg = trim,
@@ -179,7 +199,7 @@ class VelocityOuterLoop(initialConfig: RobotConfig) {
         }
         wasStale = false
         val filtered = checkNotNull(filteredCmPerSec)
-        val error = targetCmPerSec - filtered
+        val error = appliedSpeedTarget - filtered
         if (!config.speedLoopEnabled) {
             integralCorrectionDeg = 0.0
             currentTargetDeg = config.targetDeg
@@ -195,7 +215,9 @@ class VelocityOuterLoop(initialConfig: RobotConfig) {
                 rightCmPerSec = right,
                 meanCmPerSec = mean,
                 filteredCmPerSec = filtered,
-                targetCmPerSec = targetCmPerSec,
+                targetCmPerSec = requestedSpeedTarget,
+                appliedTargetCmPerSec = appliedSpeedTarget,
+                speedCommandSlewLimited = speedCommandSlewLimited,
                 errorCmPerSec = error,
                 trimDeg = config.targetDeg,
                 effectiveTargetDeg = config.targetDeg,
@@ -241,7 +263,9 @@ class VelocityOuterLoop(initialConfig: RobotConfig) {
             rightCmPerSec = right,
             meanCmPerSec = mean,
             filteredCmPerSec = filtered,
-            targetCmPerSec = targetCmPerSec,
+            targetCmPerSec = requestedSpeedTarget,
+            appliedTargetCmPerSec = appliedSpeedTarget,
+            speedCommandSlewLimited = speedCommandSlewLimited,
             errorCmPerSec = error,
             correctionDeg = correction,
             integralCorrectionDeg = integralCorrectionDeg,
@@ -278,6 +302,27 @@ class VelocityOuterLoop(initialConfig: RobotConfig) {
             }
         }
         currentTargetDeg = next
+        return next
+    }
+
+    private fun approachSpeedTarget(
+        desired: Double,
+        dtSec: Double,
+        initializeAtDesired: Boolean,
+    ): Double {
+        if (currentSpeedTargetCmPerSec == null && initializeAtDesired) {
+            currentSpeedTargetCmPerSec = desired
+            return desired
+        }
+        val current = currentSpeedTargetCmPerSec ?: 0.0
+        val maxDelta = config.speedTargetSlewRateCmPerSec * dtSec
+        val delta = desired - current
+        val next = when {
+            dtSec <= 0.0 || maxDelta <= 0.0 -> current
+            kotlin.math.abs(delta) <= maxDelta -> desired
+            else -> current + sign(delta) * maxDelta
+        }
+        currentSpeedTargetCmPerSec = next
         return next
     }
 

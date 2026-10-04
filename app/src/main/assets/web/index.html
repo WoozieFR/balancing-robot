@@ -77,13 +77,14 @@
             <label class="switch-row"><span><b>Boucle externe active</b><small>consigne → angle cible PD</small></span><input id="speed-loop-enabled" type="checkbox" checked><i class="switch" aria-hidden="true"></i></label>
             <label class="parameter-row">Consigne vitesse (cm/s) <output id="speed-target-value">0</output><input id="speed-target" type="range" min="-10" max="10" step="0.01" value="0"></label>
             <label class="parameter-row">Limite consigne (cm/s) <output id="speed-target-limit-value">10</output><input id="speed-target-limit" type="range" min="1" max="20" step="0.1" value="10"></label>
+            <label class="parameter-row">Pente consigne vitesse (cm/s²) <output id="speed-target-rate-value">20</output><input id="speed-target-rate" type="range" min="1" max="100" step="1" value="20"></label>
             <label class="parameter-row">Kev (° / cm/s) <output id="speed-kev-value">0</output><input id="speed-kev" type="range" min="0" max="2" step="0.001" value="0"></label>
             <label class="parameter-row">Cadence boucle (Hz) <output id="speed-loop-rate-value">50</output><input id="speed-loop-rate" type="range" min="5" max="100" step="1" value="50"></label>
             <label class="parameter-row">Ki auto-trim (° / (cm/s·s)) <output id="speed-integral-gain-value">0</output><input id="speed-integral-gain" type="range" min="0" max="2" step="0.001" value="0"></label>
             <label class="parameter-row">Limite correction autour du trim (°) <output id="speed-angle-limit-value">10</output><input id="speed-angle-limit" type="range" min="1" max="15" step="0.1" value="10"></label>
             <label class="parameter-row">Limite absolue cible (°) <output id="speed-absolute-angle-limit-value">15</output><input id="speed-absolute-angle-limit" type="range" min="5" max="45" step="0.1" value="15"></label>
             <label class="parameter-row">Pente cible maximale (°/s) <output id="speed-target-slew-value">30</output><input id="speed-target-slew" type="range" min="1" max="180" step="1" value="30"></label>
-            <div class="speed-readout"><div><span>gauche</span><b id="speed-left">—</b></div><div><span>moyenne filtrée</span><b id="speed-filtered">—</b></div><div><span>droite</span><b id="speed-right">—</b></div></div>
+            <div class="speed-readout"><div><span>gauche</span><b id="speed-left">—</b></div><div><span>moyenne filtrée</span><b id="speed-filtered">—</b></div><div><span>droite</span><b id="speed-right">—</b></div><div><span>consigne appliquée</span><b id="speed-applied-target">—</b></div></div>
             <p class="mini-readout" id="speed-feedback-state">Retour vitesse en attente</p>
           </article>
 

@@ -44,6 +44,7 @@ class RobotConfigValidatorTest {
         val result = RobotConfigValidator.validate(RobotConfig(
             speedTargetCmPerSec = 11.0,
             speedTargetLimitCmPerSec = 10.0,
+            speedTargetSlewRateCmPerSec = 0.0,
             speedKevDegPerCmPerSec = -0.1,
             speedLoopRateHz = 101,
             wheelDiameterMm = 0.0,
@@ -53,6 +54,7 @@ class RobotConfigValidatorTest {
         assertEquals(
             setOf(
                 "speedTargetCmPerSec",
+                "speedTargetSlewRateCmPerSec",
                 "speedKevDegPerCmPerSec",
                 "speedLoopRateHz",
                 "wheelDiameterMm",

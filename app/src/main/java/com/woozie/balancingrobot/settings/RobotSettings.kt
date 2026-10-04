@@ -37,6 +37,7 @@ object RobotSettings {
     private val speedLoopEnabledKey = booleanPreferencesKey("speed_loop_enabled")
     private val speedTargetKey = doublePreferencesKey("speed_target_cm_per_sec")
     private val speedTargetLimitKey = doublePreferencesKey("speed_target_limit_cm_per_sec")
+    private val speedTargetSlewRateCmPerSecKey = doublePreferencesKey("speed_target_slew_rate_cm_per_sec")
     private val speedKevKey = doublePreferencesKey("speed_kev_deg_per_cm_per_sec")
     private val speedLoopRateKey = intPreferencesKey("speed_loop_rate_hz")
     private val speedFilterAlphaKey = doublePreferencesKey("speed_filter_alpha")
@@ -166,6 +167,8 @@ object RobotSettings {
             speedLoopEnabled = preferences[speedLoopEnabledKey] ?: defaults.speedLoopEnabled,
             speedTargetCmPerSec = preferences[speedTargetKey] ?: defaults.speedTargetCmPerSec,
             speedTargetLimitCmPerSec = preferences[speedTargetLimitKey] ?: defaults.speedTargetLimitCmPerSec,
+            speedTargetSlewRateCmPerSec = preferences[speedTargetSlewRateCmPerSecKey]
+                ?: defaults.speedTargetSlewRateCmPerSec,
             speedKevDegPerCmPerSec = preferences[speedKevKey] ?: defaults.speedKevDegPerCmPerSec,
             speedLoopRateHz = preferences[speedLoopRateKey] ?: defaults.speedLoopRateHz,
             speedFilterAlpha = preferences[speedFilterAlphaKey] ?: defaults.speedFilterAlpha,
@@ -214,6 +217,7 @@ object RobotSettings {
             preferences[speedLoopEnabledKey] = config.speedLoopEnabled
             preferences[speedTargetKey] = config.speedTargetCmPerSec
             preferences[speedTargetLimitKey] = config.speedTargetLimitCmPerSec
+            preferences[speedTargetSlewRateCmPerSecKey] = config.speedTargetSlewRateCmPerSec
             preferences[speedKevKey] = config.speedKevDegPerCmPerSec
             preferences[speedLoopRateKey] = config.speedLoopRateHz
             preferences[speedFilterAlphaKey] = config.speedFilterAlpha

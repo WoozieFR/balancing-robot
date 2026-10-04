@@ -1134,6 +1134,15 @@ private fun BalanceTuningCard(
             speedTargetCmPerSec = draft.speedTargetCmPerSec.coerceIn(-limit, limit),
         ))
     }
+    ParameterSlider(
+        "Pente consigne vitesse (cm/s²)",
+        draft.speedTargetSlewRateCmPerSec,
+        1f..100f,
+        99,
+        liveEditable,
+    ) {
+        change(draft.copy(speedTargetSlewRateCmPerSec = it.toDouble()))
+    }
     ParameterSlider("Kev (° par cm/s)", draft.speedKevDegPerCmPerSec, 0f..2f, 199, liveEditable) {
         change(draft.copy(speedKevDegPerCmPerSec = it.toDouble()))
     }
