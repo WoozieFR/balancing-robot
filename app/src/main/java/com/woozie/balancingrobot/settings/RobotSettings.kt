@@ -8,6 +8,7 @@ import androidx.datastore.preferences.core.intPreferencesKey
 import androidx.datastore.preferences.core.stringPreferencesKey
 import androidx.datastore.preferences.preferencesDataStore
 import com.woozie.balancingrobot.domain.sensor.ImuRatePolicy
+import com.woozie.balancingrobot.domain.gamepad.GamepadConfig
 import com.woozie.balancingrobot.domain.model.Axis
 import com.woozie.balancingrobot.domain.model.MotorControlMode
 import com.woozie.balancingrobot.domain.model.RobotConfig
@@ -59,6 +60,13 @@ object RobotSettings {
     private val fallDurationKey = intPreferencesKey("fall_duration_ms")
     private val manualTimeoutKey = intPreferencesKey("manual_timeout_ms")
     private val inhibitSafetyAutoDisarmKey = booleanPreferencesKey("inhibit_safety_auto_disarm")
+    private val gamepadMaxSpeedKey = doublePreferencesKey("gamepad_max_speed_cmps")
+    private val gamepadMaxYawKey = doublePreferencesKey("gamepad_max_yaw_dps")
+    private val gamepadDeadZoneKey = doublePreferencesKey("gamepad_dead_zone")
+    private val gamepadExponentKey = doublePreferencesKey("gamepad_response_exponent")
+    private val gamepadPrecisionKey = doublePreferencesKey("gamepad_precision_scale")
+    private val gamepadSpeedSignKey = intPreferencesKey("gamepad_speed_sign")
+    private val gamepadYawSignKey = intPreferencesKey("gamepad_yaw_sign")
 
     fun webPort(context: Context): Flow<Int> = context.robotSettingsDataStore.data.map { preferences ->
         preferences[webPortKey] ?: DEFAULT_WEB_PORT
@@ -78,6 +86,45 @@ object RobotSettings {
         require(ImuRatePolicy.isValid(rateHz)) { "Fréquence IMU invalide : $rateHz Hz" }
         context.robotSettingsDataStore.edit { preferences ->
             preferences[imuRateHzKey] = rateHz
+        }
+    }
+
+    fun gamepadConfig(context: Context): Flow<GamepadConfig> =
+        context.robotSettingsDataStore.data.map { preferences ->
+            val defaults = GamepadConfig()
+            GamepadConfig(
+                maxSpeedCmPerSec = preferences[gamepadMaxSpeedKey] ?: defaults.maxSpeedCmPerSec,
+                maxYawDegPerSec = preferences[gamepadMaxYawKey] ?: defaults.maxYawDegPerSec,
+                deadZone = preferences[gamepadDeadZoneKey] ?: defaults.deadZone,
+                responseExponent = preferences[gamepadExponentKey] ?: defaults.responseExponent,
+                precisionScale = preferences[gamepadPrecisionKey] ?: defaults.precisionScale,
+                speedSign = (preferences[gamepadSpeedSignKey] ?: defaults.speedSign).let { if (it < 0) -1 else 1 },
+                yawSign = (preferences[gamepadYawSignKey] ?: defaults.yawSign).let { if (it < 0) -1 else 1 },
+            ).takeIf {
+                it.maxSpeedCmPerSec in 0.0..100.0 &&
+                    it.maxYawDegPerSec in 0.0..720.0 &&
+                    it.deadZone in 0.0..0.95 &&
+                    it.responseExponent in 1.0..3.0 &&
+                    it.precisionScale in 0.05..1.0
+            } ?: defaults
+        }
+
+    suspend fun saveGamepadConfig(context: Context, config: GamepadConfig) {
+        require(config.maxSpeedCmPerSec in 0.0..100.0)
+        require(config.maxYawDegPerSec in 0.0..720.0)
+        require(config.deadZone in 0.0..0.95)
+        require(config.responseExponent in 1.0..3.0)
+        require(config.precisionScale in 0.05..1.0)
+        require(config.speedSign == -1 || config.speedSign == 1)
+        require(config.yawSign == -1 || config.yawSign == 1)
+        context.robotSettingsDataStore.edit { preferences ->
+            preferences[gamepadMaxSpeedKey] = config.maxSpeedCmPerSec
+            preferences[gamepadMaxYawKey] = config.maxYawDegPerSec
+            preferences[gamepadDeadZoneKey] = config.deadZone
+            preferences[gamepadExponentKey] = config.responseExponent
+            preferences[gamepadPrecisionKey] = config.precisionScale
+            preferences[gamepadSpeedSignKey] = config.speedSign
+            preferences[gamepadYawSignKey] = config.yawSign
         }
     }
 

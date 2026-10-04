@@ -9,6 +9,10 @@ import android.content.pm.PackageManager
 import android.os.Build
 import android.os.Bundle
 import android.os.IBinder
+import android.os.SystemClock
+import android.view.KeyEvent
+import android.view.MotionEvent
+import android.view.WindowManager
 import androidx.activity.ComponentActivity
 import androidx.activity.compose.setContent
 import androidx.activity.result.contract.ActivityResultContracts
@@ -54,6 +58,13 @@ import androidx.core.content.ContextCompat
 import androidx.core.content.FileProvider
 import androidx.lifecycle.lifecycleScope
 import com.woozie.balancingrobot.domain.control.pdStep
+import com.woozie.balancingrobot.domain.gamepad.GamepadConfig
+import com.woozie.balancingrobot.domain.gamepad.GamepadDriveCommand
+import com.woozie.balancingrobot.domain.gamepad.gamepadSetpoints
+import com.woozie.balancingrobot.gamepad.AndroidGamepadDetector
+import com.woozie.balancingrobot.gamepad.AndroidGamepadMapper
+import com.woozie.balancingrobot.gamepad.GamepadDeviceInfo
+import com.woozie.balancingrobot.gamepad.GamepadInputState
 import com.woozie.balancingrobot.domain.model.Axis
 import com.woozie.balancingrobot.domain.model.MotorControlMode
 import com.woozie.balancingrobot.domain.model.RobotConfig
@@ -85,10 +96,29 @@ class MainActivity : ComponentActivity() {
     private var imuRateText: String by mutableStateOf(ImuRatePolicy.DEFAULT_HZ.toString())
     private var pdSettings by mutableStateOf(PdSimulationSettings())
     private var robotConfig by mutableStateOf(RobotConfig())
+    private var gamepadConfig by mutableStateOf(GamepadConfig())
+    private var gamepadInput by mutableStateOf(GamepadInputState())
+    private var gamepadDevices: List<GamepadDeviceInfo> by mutableStateOf(emptyList())
+    private var gamepadModeEnabled by mutableStateOf(false)
+    private var selectedGamepadDeviceId: Int? by mutableStateOf(null)
+    private var gamepadHeartbeatJob: Job? = null
+    private var gamepadSequence = 0L
     private var robotConfigSaveJob: Job? = null
     private var usbDevices: List<UsbSerialDeviceInfo> by mutableStateOf(emptyList())
     private var usbScanError: String? by mutableStateOf(null)
     private val usbDetector by lazy { AndroidUsbDeviceDetector(applicationContext) }
+    private val gamepadDetector by lazy { AndroidGamepadDetector(applicationContext) }
+    private val gamepadDeviceListener = object : android.hardware.input.InputManager.InputDeviceListener {
+        override fun onInputDeviceAdded(deviceId: Int) = refreshGamepadDevices()
+        override fun onInputDeviceRemoved(deviceId: Int) {
+            if (selectedGamepadDeviceId == deviceId) {
+                gamepadInput = gamepadInput.copy(available = false)
+                service?.notifyGamepadUnavailable()
+            }
+            refreshGamepadDevices()
+        }
+        override fun onInputDeviceChanged(deviceId: Int) = refreshGamepadDevices()
+    }
     private var bound = false
 
     private val notificationPermission = registerForActivityResult(
@@ -99,6 +129,11 @@ class MainActivity : ComponentActivity() {
         override fun onServiceConnected(name: ComponentName?, binder: IBinder?) {
             service = (binder as? RobotControlService.LocalBinder)?.service
             bound = true
+            service?.setGamepadFocus(hasWindowFocus())
+            if (gamepadModeEnabled) {
+                service?.setGamepadModeEnabled(true, selectedGamepadDeviceId)
+                startGamepadHeartbeat()
+            }
         }
 
         override fun onServiceDisconnected(name: ComponentName?) {
@@ -115,6 +150,7 @@ class MainActivity : ComponentActivity() {
             imuRateText = RobotSettings.imuRateHz(this@MainActivity).first().toString()
             pdSettings = RobotSettings.pdSimulation(this@MainActivity).first()
             robotConfig = RobotSettings.robotConfig(this@MainActivity).first()
+            gamepadConfig = RobotSettings.gamepadConfig(this@MainActivity).first()
         }
 
         setContent {
@@ -172,6 +208,15 @@ class MainActivity : ComponentActivity() {
                         onRunStepSequence = { service?.runManualStepSequence() },
                         onArmBalance = { confirmed -> service?.armBalance(confirmed) },
                         onDisarmBalance = { service?.disarmBalance() },
+                        gamepadConfig = gamepadConfig,
+                        gamepadDevices = gamepadDevices,
+                        gamepadModeEnabled = gamepadModeEnabled,
+                        onGamepadConfigChange = { config ->
+                            gamepadConfig = config
+                            lifecycleScope.launch { RobotSettings.saveGamepadConfig(this@MainActivity, config) }
+                        },
+                        onGamepadModeChange = ::setGamepadMode,
+                        onGamepadDeviceSelected = { selectedGamepadDeviceId = it },
                     )
                 }
             }
@@ -188,15 +233,106 @@ class MainActivity : ComponentActivity() {
             )
         }
         refreshUsbDevices()
+        refreshGamepadDevices()
+        gamepadDetector.register(gamepadDeviceListener)
+        service?.setGamepadFocus(true)
     }
 
     override fun onStop() {
+        stopGamepadHeartbeat()
+        window.clearFlags(WindowManager.LayoutParams.FLAG_KEEP_SCREEN_ON)
+        service?.setGamepadFocus(false)
+        service?.notifyGamepadUnavailable(com.woozie.balancingrobot.domain.gamepad.GamepadNeutralReason.FOCUS_LOST)
+        gamepadDetector.unregister(gamepadDeviceListener)
         if (bound) {
             unbindService(connection)
             bound = false
             service = null
         }
         super.onStop()
+    }
+
+    override fun onWindowFocusChanged(hasFocus: Boolean) {
+        super.onWindowFocusChanged(hasFocus)
+        service?.setGamepadFocus(hasFocus)
+        if (!hasFocus) stopGamepadHeartbeat() else if (gamepadModeEnabled) startGamepadHeartbeat()
+    }
+
+    override fun dispatchGenericMotionEvent(event: MotionEvent): Boolean {
+        if (AndroidGamepadMapper.isGamepadEvent(event)) {
+            gamepadInput = AndroidGamepadMapper.updateMotion(gamepadInput, event)
+            if (gamepadModeEnabled) startGamepadHeartbeat()
+            return true
+        }
+        return super.dispatchGenericMotionEvent(event)
+    }
+
+    override fun dispatchKeyEvent(event: KeyEvent): Boolean {
+        if (AndroidGamepadMapper.isGamepadEvent(event)) {
+            if (AndroidGamepadMapper.isEmergencyDisarm(event)) {
+                service?.emergencyDisarmFromGamepad()
+                return true
+            }
+            val down = event.action == KeyEvent.ACTION_DOWN
+            gamepadInput = AndroidGamepadMapper.updateKey(gamepadInput, event, down)
+            if (gamepadModeEnabled) startGamepadHeartbeat()
+            return true
+        }
+        return super.dispatchKeyEvent(event)
+    }
+
+    private fun refreshGamepadDevices() {
+        gamepadDevices = gamepadDetector.devices()
+        if (selectedGamepadDeviceId == null) selectedGamepadDeviceId = gamepadDevices.firstOrNull()?.id
+    }
+
+    private fun setGamepadMode(enabled: Boolean) {
+        val deviceId = selectedGamepadDeviceId
+        if (enabled && deviceId == null) return
+        val accepted = service?.setGamepadModeEnabled(enabled, deviceId) ?: false
+        if (!enabled || accepted) {
+            gamepadModeEnabled = enabled
+            if (enabled) {
+                window.addFlags(WindowManager.LayoutParams.FLAG_KEEP_SCREEN_ON)
+                gamepadInput = gamepadInput.copy(deviceId = deviceId, focused = true)
+                startGamepadHeartbeat()
+            } else {
+                window.clearFlags(WindowManager.LayoutParams.FLAG_KEEP_SCREEN_ON)
+                stopGamepadHeartbeat()
+            }
+        }
+    }
+
+    private fun startGamepadHeartbeat() {
+        if (!gamepadModeEnabled || gamepadHeartbeatJob?.isActive == true) return
+        gamepadHeartbeatJob = lifecycleScope.launch {
+            while (gamepadModeEnabled && bound) {
+                val deviceId = selectedGamepadDeviceId
+                if (deviceId != null) {
+                    val (speed, yaw) = gamepadSetpoints(
+                        gamepadInput.speedAxis,
+                        gamepadInput.yawAxis,
+                        gamepadConfig,
+                        precisionHeld = gamepadInput.precisionHeld,
+                    )
+                    service?.submitGamepadCommand(GamepadDriveCommand(
+                        deviceId = deviceId,
+                        sequence = ++gamepadSequence,
+                        timestampNs = SystemClock.elapsedRealtimeNanos(),
+                        speedTargetCmPerSec = speed.target,
+                        yawTargetDegPerSec = yaw.target,
+                        deadmanHeld = gamepadInput.deadmanHeld,
+                        precisionHeld = gamepadInput.precisionHeld,
+                    ))
+                }
+                delay((1000L / gamepadConfig.heartbeatHz.coerceIn(20, 100)).coerceAtLeast(5L))
+            }
+        }
+    }
+
+    private fun stopGamepadHeartbeat() {
+        gamepadHeartbeatJob?.cancel()
+        gamepadHeartbeatJob = null
     }
 
     private fun startRobotService(portText: String) {
@@ -345,6 +481,12 @@ private fun Lot2Screen(
     onRunStepSequence: () -> Unit,
     onArmBalance: (Boolean) -> Unit,
     onDisarmBalance: () -> Unit,
+    gamepadConfig: GamepadConfig,
+    gamepadDevices: List<GamepadDeviceInfo>,
+    gamepadModeEnabled: Boolean,
+    onGamepadConfigChange: (GamepadConfig) -> Unit,
+    onGamepadModeChange: (Boolean) -> Unit,
+    onGamepadDeviceSelected: (Int) -> Unit,
 ) {
     var selectedTab by remember { mutableStateOf(0) }
     Column(
@@ -413,7 +555,7 @@ private fun Lot2Screen(
         }
         Spacer(Modifier.height(24.dp))
         PrimaryTabRow(selectedTabIndex = selectedTab) {
-            listOf("Serveur", "IMU", "Simulation PD", "Moteurs", "Réglages").forEachIndexed { index, label ->
+            listOf("Serveur", "IMU", "Simulation PD", "Moteurs", "Réglages", "Manette").forEachIndexed { index, label ->
                 Tab(
                     selected = selectedTab == index,
                     onClick = { selectedTab = index },
@@ -506,6 +648,17 @@ private fun Lot2Screen(
                 onApply = onApplyRobotConfig,
                 onArmBalance = onArmBalance,
                 onDisarmBalance = onDisarmBalance,
+            )
+        }
+        if (selectedTab == 5) {
+            GamepadCard(
+                state = state.gamepad,
+                config = gamepadConfig,
+                devices = gamepadDevices,
+                modeEnabled = gamepadModeEnabled,
+                onConfigChange = onGamepadConfigChange,
+                onModeChange = onGamepadModeChange,
+                onDeviceSelected = onGamepadDeviceSelected,
             )
         }
         Spacer(Modifier.height(24.dp))
@@ -803,6 +956,83 @@ private fun MotorDiagnosticCard(
 }
 
 @Composable
+private fun GamepadCard(
+    state: com.woozie.balancingrobot.service.GamepadDiagnosticState,
+    config: GamepadConfig,
+    devices: List<GamepadDeviceInfo>,
+    modeEnabled: Boolean,
+    onConfigChange: (GamepadConfig) -> Unit,
+    onModeChange: (Boolean) -> Unit,
+    onDeviceSelected: (Int) -> Unit,
+) {
+    Text("Manette Bluetooth (DualShock 4)", style = MaterialTheme.typography.titleMedium)
+    Spacer(Modifier.height(8.dp))
+    Text(
+        "La manette doit être appairée dans Android. R1 est le deadman, L1 réduit la sensibilité, " +
+            "et Cercle désarme immédiatement. La manette ne peut pas armer le robot.",
+        style = MaterialTheme.typography.bodySmall,
+    )
+    Spacer(Modifier.height(8.dp))
+    if (devices.isEmpty()) {
+        Text("Aucune manette détectée. Appairez la PS4 puis revenez dans l'application.")
+    } else {
+        devices.forEach { device ->
+            Row(verticalAlignment = androidx.compose.ui.Alignment.CenterVertically) {
+                Checkbox(
+                    checked = state.deviceId == device.id,
+                    onCheckedChange = { if (it) onDeviceSelected(device.id) },
+                    enabled = !modeEnabled,
+                )
+                Text("${device.name} (ID ${device.id})")
+            }
+        }
+    }
+    Button(
+        onClick = { onModeChange(!modeEnabled) },
+        enabled = devices.isNotEmpty() || modeEnabled,
+        modifier = Modifier.fillMaxWidth(),
+    ) {
+        Text(if (modeEnabled) "Désactiver le mode manette" else "Activer le mode manette")
+    }
+    Text(
+        "État : ${if (modeEnabled) "ACTIF" else "inactif"} · source ${state.source.name} · " +
+            "${state.neutralReason.name}",
+        color = if (modeEnabled) MaterialTheme.colorScheme.primary else MaterialTheme.colorScheme.onSurface,
+    )
+    state.lastEvent?.let { Text(it, style = MaterialTheme.typography.bodySmall) }
+    ParameterSlider("Vitesse maximale (cm/s)", config.maxSpeedCmPerSec, 0f..20f, 99, true) {
+        onConfigChange(config.copy(maxSpeedCmPerSec = it.toDouble()))
+    }
+    ParameterSlider("Rotation maximale (°/s)", config.maxYawDegPerSec, 0f..360f, 119, true) {
+        onConfigChange(config.copy(maxYawDegPerSec = it.toDouble()))
+    }
+    ParameterSlider("Dead-zone", config.deadZone, 0f..0.5f, 49, true) {
+        onConfigChange(config.copy(deadZone = it.toDouble()))
+    }
+    ParameterSlider("Exponent de réponse", config.responseExponent, 1f..3f, 19, true) {
+        onConfigChange(config.copy(responseExponent = it.toDouble()))
+    }
+    ParameterSlider("Facteur précision L1", config.precisionScale, 0.05f..1f, 18, true) {
+        onConfigChange(config.copy(precisionScale = it.toDouble()))
+    }
+    Row(verticalAlignment = androidx.compose.ui.Alignment.CenterVertically) {
+        OutlinedButton(onClick = { onConfigChange(config.copy(speedSign = -config.speedSign)) }) {
+            Text("Signe vitesse : ${if (config.speedSign > 0) "+1" else "-1"}")
+        }
+        Spacer(Modifier.width(8.dp))
+        OutlinedButton(onClick = { onConfigChange(config.copy(yawSign = -config.yawSign)) }) {
+            Text("Signe yaw : ${if (config.yawSign > 0) "+1" else "-1"}")
+        }
+    }
+    Text(
+        "Axes : stick gauche vertical = ${number(state.effectiveSpeedTargetCmPerSec)} cm/s · " +
+            "stick droit horizontal = ${number(state.effectiveYawTargetDegPerSec)} °/s · " +
+            "deadman ${if (state.deadmanHeld) "tenu" else "relâché"}",
+        style = MaterialTheme.typography.bodySmall,
+    )
+}
+
+@Composable
 private fun BalanceTuningCard(
     config: RobotConfig,
     armState: MotorArmState,
@@ -975,6 +1205,19 @@ private fun BalanceTuningCard(
     ParameterSlider("Timeout manuel (ms)", draft.manualTimeoutMs.toFloat(), 100f..2000f, 95, guardedEditable) {
         change(draft.copy(manualTimeoutMs = it.toLong()))
     }
+    Row(verticalAlignment = androidx.compose.ui.Alignment.CenterVertically) {
+        Checkbox(
+            checked = draft.inhibitSafetyAutoDisarm,
+            onCheckedChange = { enabled ->
+                change(draft.copy(inhibitSafetyAutoDisarm = enabled))
+            },
+            enabled = liveEditable,
+        )
+        Text(
+            "Inhiber les désarmements automatiques sur erreur (défauts visibles, arrêt manuel prioritaire)",
+            style = MaterialTheme.typography.bodySmall,
+        )
+    }
     Text("Réglages modifiés en direct · aucune validation supplémentaire nécessaire", style = MaterialTheme.typography.bodySmall)
     Row(verticalAlignment = androidx.compose.ui.Alignment.CenterVertically) {
         Checkbox(checked = safeTestConfirmed, onCheckedChange = { safeTestConfirmed = it })
@@ -992,6 +1235,15 @@ private fun BalanceTuningCard(
         ) { Text("Désarmer") }
     }
     Text("État moteur : ${armState.name}", style = MaterialTheme.typography.bodySmall)
+    Text(
+        if (draft.inhibitSafetyAutoDisarm) {
+            "Sécurité : inhibition active · les défauts restent visibles · arrêt manuel prioritaire"
+        } else {
+            "Sécurité : désarmement automatique actif"
+        },
+        style = MaterialTheme.typography.bodySmall,
+        color = if (draft.inhibitSafetyAutoDisarm) MaterialTheme.colorScheme.error else MaterialTheme.colorScheme.onSurface,
+    )
     Text(
         "PD : erreur ${number(balance.lastErrorDeg)}° · commande ${balance.lastCommand}" +
             " · latence ${number(balance.controlLatencyMs)} ms${if (balance.saturated) " · SATURÉ" else ""}",

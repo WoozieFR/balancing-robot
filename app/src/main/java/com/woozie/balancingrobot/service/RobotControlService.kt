@@ -28,6 +28,11 @@ import com.woozie.balancingrobot.domain.control.VelocityLoopOutput
 import com.woozie.balancingrobot.domain.control.VelocityOuterLoop
 import com.woozie.balancingrobot.domain.control.WheelVelocityFeedback
 import com.woozie.balancingrobot.domain.control.normalizeWheelVelocity
+import com.woozie.balancingrobot.domain.gamepad.DriveCommandSource
+import com.woozie.balancingrobot.domain.gamepad.DriveSetpointArbiter
+import com.woozie.balancingrobot.domain.gamepad.GamepadDriveCommand
+import com.woozie.balancingrobot.domain.gamepad.GamepadNeutralReason
+import com.woozie.balancingrobot.domain.gamepad.ParameterDriveSetpoint
 import com.woozie.balancingrobot.domain.model.Axis
 import com.woozie.balancingrobot.domain.model.MotorControlMode
 import com.woozie.balancingrobot.domain.model.RobotConfig
@@ -79,6 +84,7 @@ data class RobotServiceState(
     val balance: BalanceDiagnosticState = BalanceDiagnosticState(),
     val speedLoop: SpeedLoopDiagnosticState = SpeedLoopDiagnosticState(),
     val controlRecording: ControlRecordingState = ControlRecordingState(),
+    val gamepad: GamepadDiagnosticState = GamepadDiagnosticState(),
     val motors: MotorDiagnosticState = MotorDiagnosticState(),
 )
 
@@ -134,6 +140,7 @@ class RobotControlService : Service() {
     private val speedLoopRateMeter = SampleRateMeter()
     private val speedFeedbackRateMeter = SampleRateMeter()
     private var velocityOuterLoop = VelocityOuterLoop(RobotConfig())
+    private val driveSetpointArbiter = DriveSetpointArbiter()
     private var lastSpeedFeedbackSequence: Long? = null
     private var speedLoopActualRateHz = 0.0
     private var speedFeedbackActualRateHz = 0.0
@@ -195,6 +202,7 @@ class RobotControlService : Service() {
         balanceWatchdogJob = null
         controlLog.stop()
         stopMotors()
+        driveSetpointArbiter.reset()
         server = null
         _state.value = RobotServiceState()
         runCatching { stopForeground(STOP_FOREGROUND_REMOVE) }
@@ -370,6 +378,7 @@ class RobotControlService : Service() {
             motorScheduler = null
         }
         activeConfig = config
+        driveSetpointArbiter.acknowledgeParameterTakeover()
         if (imuRuntime == null) imuRuntime = SimulatedControlRuntime(config)
         else imuRuntime?.updateConfig(config)
         velocityOuterLoop.updateConfig(config)
@@ -403,6 +412,91 @@ class RobotControlService : Service() {
         }
         if (motorConfigChanged && current.motors.connected) configureMotors()
         return true
+    }
+
+    /** Enables the already-paired controller for ephemeral drive setpoints. */
+    fun setGamepadModeEnabled(enabled: Boolean, deviceId: Int? = null): Boolean {
+        if (!enabled) {
+            driveSetpointArbiter.disable()
+            _state.update { it.copy(gamepad = it.gamepad.copy(
+                modeEnabled = false,
+                connected = false,
+                focused = false,
+                source = DriveCommandSource.NEUTRAL,
+                neutralReason = GamepadNeutralReason.DISABLED,
+                effectiveSpeedTargetCmPerSec = 0.0,
+                effectiveYawTargetDegPerSec = 0.0,
+                deadmanHeld = false,
+                precisionHeld = false,
+                lastEvent = "Mode manette désactivé : reprise verrouillée jusqu'à un nouveau réglage",
+            )) }
+            return true
+        }
+        if (!_state.value.running || deviceId == null) return false
+        if (!driveSetpointArbiter.enable(deviceId)) return false
+        _state.update { it.copy(gamepad = it.gamepad.copy(
+            modeEnabled = true,
+            deviceId = deviceId,
+            connected = true,
+            focused = true,
+            source = DriveCommandSource.NEUTRAL,
+            neutralReason = GamepadNeutralReason.TIMEOUT,
+            lastEvent = "Mode manette activé : maintenir R1 pour commander",
+        )) }
+        return true
+    }
+
+    fun submitGamepadCommand(command: GamepadDriveCommand): Boolean {
+        val accepted = driveSetpointArbiter.submit(command)
+        if (accepted) {
+            _state.update { it.copy(gamepad = it.gamepad.copy(
+                modeEnabled = true,
+                deviceId = command.deviceId,
+                connected = true,
+                focused = true,
+                source = if (command.deadmanHeld) DriveCommandSource.GAMEPAD else DriveCommandSource.NEUTRAL,
+                neutralReason = if (command.deadmanHeld) GamepadNeutralReason.NONE else GamepadNeutralReason.DEADMAN_RELEASED,
+                lastSequence = command.sequence,
+                lastCommandAgeMs = 0.0,
+                deadmanHeld = command.deadmanHeld,
+                precisionHeld = command.precisionHeld,
+                effectiveSpeedTargetCmPerSec = if (command.deadmanHeld) command.speedTargetCmPerSec else 0.0,
+                effectiveYawTargetDegPerSec = if (command.deadmanHeld) command.yawTargetDegPerSec else 0.0,
+                lastEvent = if (command.deadmanHeld) "Commande manette reçue" else "Deadman relâché",
+            )) }
+        }
+        return accepted
+    }
+
+    fun notifyGamepadUnavailable(reason: GamepadNeutralReason = GamepadNeutralReason.DISCONNECTED) {
+        driveSetpointArbiter.setAvailable(false)
+        _state.update { it.copy(gamepad = it.gamepad.copy(
+            connected = false,
+            source = DriveCommandSource.NEUTRAL,
+            neutralReason = reason,
+            effectiveSpeedTargetCmPerSec = 0.0,
+            effectiveYawTargetDegPerSec = 0.0,
+            deadmanHeld = false,
+            precisionHeld = false,
+            lastEvent = "Entrée manette neutralisée : ${reason.name}",
+        )) }
+    }
+
+    fun setGamepadFocus(focused: Boolean) {
+        driveSetpointArbiter.setFocused(focused)
+        _state.update { it.copy(gamepad = it.gamepad.copy(
+            focused = focused,
+            source = if (focused) it.gamepad.source else DriveCommandSource.NEUTRAL,
+            neutralReason = if (focused) it.gamepad.neutralReason else GamepadNeutralReason.FOCUS_LOST,
+            effectiveSpeedTargetCmPerSec = if (focused) it.gamepad.effectiveSpeedTargetCmPerSec else 0.0,
+            effectiveYawTargetDegPerSec = if (focused) it.gamepad.effectiveYawTargetDegPerSec else 0.0,
+        )) }
+    }
+
+    fun emergencyDisarmFromGamepad() {
+        disarmBalance()
+        disarmManual()
+        _state.update { it.copy(gamepad = it.gamepad.copy(lastEvent = "Désarmement d'urgence demandé par la manette")) }
     }
 
     fun armBalance(safeTestConfirmed: Boolean) {
@@ -674,6 +768,7 @@ class RobotControlService : Service() {
 
     private fun startServer(port: Int, imuRateHz: Int, config: RobotConfig) {
         motorLog.clear()
+        driveSetpointArbiter.reset()
         activeConfig = config
         server = SocketRobotWebServer(
             assets = assets,
@@ -707,6 +802,7 @@ class RobotControlService : Service() {
                 requestedRateHz = imuRateHz,
                 status = "Initialisation des capteurs…",
             ),
+            gamepad = GamepadDiagnosticState(),
             motors = MotorDiagnosticState(
                 requiredIds = config.motorIds,
                 motorSigns = config.motorSigns,
@@ -952,14 +1048,33 @@ class RobotControlService : Service() {
             return
         }
 
-        val speedOutput = updateSpeedLoop(receivedTimestampNs)
+        val driveSetpoint = driveSetpointArbiter.resolve(
+            receivedTimestampNs,
+            ParameterDriveSetpoint(
+                speedTargetCmPerSec = activeConfig.speedTargetCmPerSec,
+                yawTargetDegPerSec = activeConfig.yawTargetDegPerSec,
+            ),
+        )
+        _state.update { state ->
+            state.copy(gamepad = state.gamepad.copy(
+                source = driveSetpoint.source,
+                neutralReason = driveSetpoint.neutralReason,
+                lastCommandAgeMs = driveSetpoint.ageMs,
+                effectiveSpeedTargetCmPerSec = driveSetpoint.speedTargetCmPerSec,
+                effectiveYawTargetDegPerSec = driveSetpoint.yawTargetDegPerSec,
+                lastSequence = driveSetpoint.sequence,
+                deadmanHeld = driveSetpoint.deadmanHeld,
+                precisionHeld = driveSetpoint.precisionHeld,
+            ))
+        }
+        val speedOutput = updateSpeedLoop(receivedTimestampNs, driveSetpoint.speedTargetCmPerSec)
         val step = imuRuntime?.step(
             accel!!,
             gyroDps,
             dtSec,
             targetDeg = speedOutput.effectiveTargetDeg,
             yawRateDegPerSec = gyroZDps ?: 0.0,
-            yawTargetDegPerSec = activeConfig.yawTargetDegPerSec,
+            yawTargetDegPerSec = driveSetpoint.yawTargetDegPerSec,
         )
         val estimate = step?.estimate
         val accelAngle = estimate?.accelAngleDeg
@@ -1038,7 +1153,7 @@ class RobotControlService : Service() {
         )
     }
 
-    private fun updateSpeedLoop(nowNs: Long): VelocityLoopOutput {
+    private fun updateSpeedLoop(nowNs: Long, targetCmPerSec: Double = activeConfig.speedTargetCmPerSec): VelocityLoopOutput {
         val snapshot = motorScheduler?.velocitySnapshot()
         val feedback = if (
             snapshot != null && snapshot.values.size >= 2 && snapshot.timestampsNs.size >= 2 &&
@@ -1064,7 +1179,7 @@ class RobotControlService : Service() {
                 rightTimestampNs = snapshot.timestampsNs[1],
             )
         } else null
-        val output = velocityOuterLoop.step(nowNs, feedback)
+        val output = velocityOuterLoop.step(nowNs, feedback, targetCmPerSec)
         if (output.updated) {
             speedLoopActualRateHz = speedLoopRateMeter.record(nowNs).frequencyHz
             _state.update { state ->
@@ -1161,6 +1276,13 @@ class RobotControlService : Service() {
                 speedTargetSaturated = speedOutput?.saturated,
                 speedLoopActualRateHz = speedLoopActualRateHz,
                 speedFeedbackActualRateHz = speedFeedbackActualRateHz,
+                gamepadSource = _state.value.gamepad.source.name,
+                gamepadNeutralReason = _state.value.gamepad.neutralReason.name,
+                gamepadCommandAgeMs = _state.value.gamepad.lastCommandAgeMs,
+                gamepadSequence = _state.value.gamepad.lastSequence,
+                gamepadDeadmanHeld = _state.value.gamepad.deadmanHeld,
+                gamepadSpeedTargetCmPerSec = _state.value.gamepad.effectiveSpeedTargetCmPerSec,
+                gamepadYawTargetDegPerSec = _state.value.gamepad.effectiveYawTargetDegPerSec,
             ),
         )
         val now = SystemClock.elapsedRealtimeNanos()
@@ -1182,6 +1304,7 @@ class RobotControlService : Service() {
         val config = _state.value.config
         val balance = _state.value.balance
         val speed = _state.value.speedLoop
+        val gamepad = _state.value.gamepad
         return buildJsonObject {
             put("serviceRunning", _state.value.running)
             put("requestedRateHz", imu.requestedRateHz)
@@ -1215,6 +1338,20 @@ class RobotControlService : Service() {
             motors.ioMetrics.lastWriteSequence?.let { put("motorLastWriteSequence", it) }
             put("controlRecording", _state.value.controlRecording.recording)
             put("controlRecordingSamples", _state.value.controlRecording.samples)
+            put("gamepadModeEnabled", gamepad.modeEnabled)
+            put("gamepadConnected", gamepad.connected)
+            put("gamepadFocused", gamepad.focused)
+            put("gamepadSource", gamepad.source.name)
+            put("gamepadNeutralReason", gamepad.neutralReason.name)
+            gamepad.deviceId?.let { put("gamepadDeviceId", it) }
+            gamepad.deviceName?.let { put("gamepadDeviceName", it) }
+            gamepad.lastSequence?.let { put("gamepadLastSequence", it) }
+            gamepad.lastCommandAgeMs?.let { put("gamepadCommandAgeMs", it) }
+            put("gamepadDeadmanHeld", gamepad.deadmanHeld)
+            put("gamepadPrecisionHeld", gamepad.precisionHeld)
+            put("gamepadEffectiveSpeedTargetCmPerSec", gamepad.effectiveSpeedTargetCmPerSec)
+            put("gamepadEffectiveYawTargetDegPerSec", gamepad.effectiveYawTargetDegPerSec)
+            gamepad.lastEvent?.let { put("gamepadLastEvent", it) }
             put("axis", config.axis.name)
             put("imuSign", config.imuSign)
             put("alpha", config.alpha)

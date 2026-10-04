@@ -54,6 +54,11 @@ Consigne, gains, filtre, fréquence (50 Hz par défaut), limites, pente et timeo
 sont réglables en direct depuis Android et le Web. Le diamètre et le rapport de
 transmission restent modifiables uniquement désarmé.
 
+Les garde-fous IMU, chute et moteur restent actifs par défaut. Le réglage
+explicite **Inhiber les désarmements automatiques sur erreur** (Android ou Web)
+permet, pour la mise au point roues levées, de conserver l'état armé tout en
+affichant le défaut ; l'arrêt manuel et l'arrêt du service restent prioritaires.
+
 La boucle de rotation complète la commande d'équilibrage sans la remplacer.
 Une consigne yaw nulle désactive explicitement cette boucle ; sinon le gyro Z
 fournit la vitesse de lacet et le correcteur proportionnel calcule `u_turn`.

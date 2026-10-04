@@ -51,6 +51,13 @@ data class ControlLogRecord(
     val speedTargetSaturated: Boolean? = null,
     val speedLoopActualRateHz: Double? = null,
     val speedFeedbackActualRateHz: Double? = null,
+    val gamepadSource: String? = null,
+    val gamepadNeutralReason: String? = null,
+    val gamepadCommandAgeMs: Double? = null,
+    val gamepadSequence: Long? = null,
+    val gamepadDeadmanHeld: Boolean? = null,
+    val gamepadSpeedTargetCmPerSec: Double? = null,
+    val gamepadYawTargetDegPerSec: Double? = null,
 )
 
 /** Explicit start/stop ring buffer for a RAM-resident control session. */
@@ -110,7 +117,9 @@ class ControlSessionLog(private val capacity: Int = 100_000) {
                 "speed_left_raw_steps_per_s,speed_right_raw_steps_per_s,speed_left_cmps,speed_right_cmps," +
                 "speed_mean_cmps,speed_filtered_cmps,speed_error_cmps,speed_correction_deg," +
                 "speed_integral_correction_deg,speed_target_slew_limited,speed_stale," +
-                "speed_target_saturated,speed_loop_actual_hz,speed_feedback_actual_hz,arm_state,sample_status",
+                "speed_target_saturated,speed_loop_actual_hz,speed_feedback_actual_hz,arm_state,sample_status," +
+                "gamepad_source,gamepad_neutral_reason,gamepad_command_age_ms,gamepad_sequence," +
+                "gamepad_deadman_held,gamepad_speed_target_cmps,gamepad_yaw_target_dps",
         )
         records.forEach { record ->
             val config = record.config
@@ -195,7 +204,14 @@ class ControlSessionLog(private val capacity: Int = 100_000) {
                 .appendNullable(record.speedLoopActualRateHz).append(',')
                 .appendNullable(record.speedFeedbackActualRateHz).append(',')
                 .append(record.armState).append(',')
-                .append(record.sampleStatus?.replace(',', ';') ?: "")
+                .append(record.sampleStatus?.replace(',', ';') ?: "").append(',')
+                .append(record.gamepadSource ?: "").append(',')
+                .append(record.gamepadNeutralReason ?: "").append(',')
+                .appendNullable(record.gamepadCommandAgeMs).append(',')
+                .append(record.gamepadSequence ?: "").append(',')
+                .append(record.gamepadDeadmanHeld ?: "").append(',')
+                .appendNullable(record.gamepadSpeedTargetCmPerSec).append(',')
+                .appendNullable(record.gamepadYawTargetDegPerSec)
                 .appendLine()
         }
     }

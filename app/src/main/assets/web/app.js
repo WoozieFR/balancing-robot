@@ -148,6 +148,14 @@ const renderDiagnostics = (diagnostics) => {
     ? 'inactive · consigne 0'
     : `actif · gyro Z ${number(diagnostics.yawRateDegPerSec, ' °/s')} · erreur ${number(diagnostics.yawErrorDegPerSec, ' °/s')}`);
   text('turn-command', diagnostics.turnCommand ?? 0);
+  text('gamepad-mode', diagnostics.gamepadModeEnabled ? 'actif' : 'inactif');
+  text('gamepad-device', diagnostics.gamepadDeviceName
+    ? `${diagnostics.gamepadDeviceName} (${diagnostics.gamepadDeviceId ?? '—'})`
+    : '—');
+  text('gamepad-source', diagnostics.gamepadSource || '—');
+  text('gamepad-reason', diagnostics.gamepadNeutralReason || '—');
+  text('gamepad-targets', `${number(diagnostics.gamepadEffectiveSpeedTargetCmPerSec, ' cm/s')} / ${number(diagnostics.gamepadEffectiveYawTargetDegPerSec, ' °/s')}`);
+  text('gamepad-deadman', diagnostics.gamepadDeadmanHeld ? 'tenu' : 'relâché');
 
   text('motor-state', `${armState} · ${diagnostics.motorConnected ? 'USB connecté' : 'USB arrêté'}`);
   text('motor-command', `${diagnostics.motorCommand ?? 0} · deadman ${diagnostics.motorDeadmanHeld ? 'tenu' : 'relâché'}`);

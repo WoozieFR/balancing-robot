@@ -102,8 +102,13 @@ class VelocityOuterLoop(initialConfig: RobotConfig) {
         lastOutput = null
     }
 
-    fun step(nowNs: Long, feedback: WheelVelocityFeedback?): VelocityLoopOutput {
+    fun step(
+        nowNs: Long,
+        feedback: WheelVelocityFeedback?,
+        targetCmPerSec: Double = config.speedTargetCmPerSec,
+    ): VelocityLoopOutput {
         require(nowNs > 0L) { "monotonic timestamp must be positive" }
+        require(targetCmPerSec.isFinite()) { "speed target must be finite" }
         val periodNs = 1_000_000_000L / config.speedLoopRateHz
         if (lastTickNs > 0L && nowNs >= lastTickNs && nowNs - lastTickNs < periodNs) {
             return checkNotNull(lastOutput).copy(updated = false)
@@ -135,7 +140,7 @@ class VelocityOuterLoop(initialConfig: RobotConfig) {
                 enabled = config.speedLoopEnabled,
                 updated = true,
                 stale = true,
-                targetCmPerSec = config.speedTargetCmPerSec,
+                targetCmPerSec = targetCmPerSec,
                 trimDeg = trim,
                 effectiveTargetDeg = effective,
             )).copy(
@@ -143,7 +148,7 @@ class VelocityOuterLoop(initialConfig: RobotConfig) {
                 updated = true,
                 stale = true,
                 feedbackAgeMs = ageNs?.coerceAtLeast(0L)?.div(1_000_000.0),
-                targetCmPerSec = config.speedTargetCmPerSec,
+                targetCmPerSec = targetCmPerSec,
                 correctionDeg = effective - trim,
                 integralCorrectionDeg = 0.0,
                 trimDeg = trim,
@@ -174,7 +179,7 @@ class VelocityOuterLoop(initialConfig: RobotConfig) {
         }
         wasStale = false
         val filtered = checkNotNull(filteredCmPerSec)
-        val error = config.speedTargetCmPerSec - filtered
+        val error = targetCmPerSec - filtered
         if (!config.speedLoopEnabled) {
             integralCorrectionDeg = 0.0
             currentTargetDeg = config.targetDeg
@@ -190,7 +195,7 @@ class VelocityOuterLoop(initialConfig: RobotConfig) {
                 rightCmPerSec = right,
                 meanCmPerSec = mean,
                 filteredCmPerSec = filtered,
-                targetCmPerSec = config.speedTargetCmPerSec,
+                targetCmPerSec = targetCmPerSec,
                 errorCmPerSec = error,
                 trimDeg = config.targetDeg,
                 effectiveTargetDeg = config.targetDeg,
@@ -236,7 +241,7 @@ class VelocityOuterLoop(initialConfig: RobotConfig) {
             rightCmPerSec = right,
             meanCmPerSec = mean,
             filteredCmPerSec = filtered,
-            targetCmPerSec = config.speedTargetCmPerSec,
+            targetCmPerSec = targetCmPerSec,
             errorCmPerSec = error,
             correctionDeg = correction,
             integralCorrectionDeg = integralCorrectionDeg,
