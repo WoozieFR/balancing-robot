@@ -263,6 +263,8 @@ data class RobotConfig(
     val speedAbsoluteAngleLimitDeg: Double = 15.0,
     val speedTargetSlewRateDegPerSec: Double = 30.0,
     val speedFeedbackTimeoutMs: Long = 100,
+    val yawTargetDegPerSec: Double = 0.0,
+    val yawKpCommandPerDegPerSec: Double = 1.0,
     val wheelDiameterMm: Double = 40.0,
     val driveRatio: Double = 1.0,
     val vmax: Int = 6000,
@@ -552,6 +554,26 @@ un auto-trim persistant avec anti-windup. Si la paire dépasse
 progressivement vers le trim au lieu de rester gelée. Une récupération fraîche
 réinitialise l'EMA à la mesure courante afin d'éviter un transitoire fondé sur
 une ancienne vitesse.
+
+### 8.5 Boucle de rotation différentielle
+
+La rotation est pilotée par la composante verticale du gyroscope, `gyroZ`,
+exprimée en degrés par seconde. Lorsque `yawTargetDegPerSec == 0`, le
+correcteur est inactif et `u_turn == 0`. Sinon :
+
+```text
+yaw_error = yawTargetDegPerSec - gyroZ
+u_turn = clamp(yawKpCommandPerDegPerSec × yaw_error, ±commandLimit)
+u_left_logical  = clamp(u_balance + u_turn, ±commandLimit)
+u_right_logical = clamp(u_balance - u_turn, ±commandLimit)
+motorCommands = applyMotorSigns([u_left_logical, u_right_logical], motorSigns)
+```
+
+Le mélange est réalisé après le PD et la boucle vitesse, mais avant les signes
+et l'envoi USB. Les deux voies sont donc solidaires pour l'équilibrage et
+opposées pour une rotation sur place. Les valeurs `gyroZ`, erreur yaw,
+`u_turn` et commandes finales par roue sont publiées dans `/diagnostics` et le
+CSV de session.
 
 ## 9. Supervision de sécurité
 

@@ -68,4 +68,27 @@ class SimulatedControlRuntimeTest {
         assertEquals(10.0, step.estimate!!.angleDeg, 1e-6)
         assertEquals(-100, step.control!!.boundedCommand)
     }
+
+    @Test
+    fun yawCommandIsMixedDifferentiallyBeforeMotorSigns() {
+        val runtime = SimulatedControlRuntime(
+            RobotConfig(
+                alpha = 1.0,
+                kp = 0.0,
+                yawTargetDegPerSec = 10.0,
+                yawKpCommandPerDegPerSec = 1.0,
+                motorSigns = listOf(1, 1),
+            ),
+        )
+
+        val step = runtime.step(
+            Vector3(0.0, 0.0, 1.0),
+            gyroRateDegPerSec = 0.0,
+            dtSec = 0.01,
+            yawRateDegPerSec = 0.0,
+        )
+
+        assertEquals(10, step.control!!.turnCommand)
+        assertEquals(listOf(10, -10), step.control.motorCommands)
+    }
 }

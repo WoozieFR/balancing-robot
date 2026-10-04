@@ -54,6 +54,15 @@ Consigne, gains, filtre, fréquence (50 Hz par défaut), limites, pente et timeo
 sont réglables en direct depuis Android et le Web. Le diamètre et le rapport de
 transmission restent modifiables uniquement désarmé.
 
+La boucle de rotation complète la commande d'équilibrage sans la remplacer.
+Une consigne yaw nulle désactive explicitement cette boucle ; sinon le gyro Z
+fournit la vitesse de lacet et le correcteur proportionnel calcule `u_turn`.
+La sortie différentielle est ensuite `uL = u_balance + u_turn` et
+`uR = u_balance - u_turn`, avec saturation indépendante de chaque roue puis
+application des signes moteurs. La consigne yaw et son gain sont modifiables
+en direct sur Android et le Web, et la commande, l'erreur et la vitesse Z sont
+présentes dans le diagnostic et le CSV.
+
 ## Build et tests
 
 Depuis la racine du projet :

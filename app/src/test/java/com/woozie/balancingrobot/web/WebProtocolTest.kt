@@ -62,6 +62,16 @@ class WebProtocolTest {
     }
 
     @Test
+    fun acceptsPartialYawParameterPatch() {
+        val result = WebProtocol.parseCommand(
+            "{\"v\":1,\"id\":\"y\",\"type\":\"update_parameters\",\"payload\":{" +
+                "\"yawTargetDegPerSec\":60.0}}",
+        ) as ParseResult.Accepted
+
+        assertEquals(60.0, WebProtocol.payloadDouble(result.command, "yawTargetDegPerSec")!!, 1e-9)
+    }
+
+    @Test
     fun createsDiagnosticFrame() {
         val frame = WebProtocol.diagnostics("d", "{\"gyroRateHz\":200}")
 

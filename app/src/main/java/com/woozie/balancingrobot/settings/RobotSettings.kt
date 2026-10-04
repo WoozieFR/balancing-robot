@@ -44,6 +44,8 @@ object RobotSettings {
     private val speedAbsoluteAngleLimitKey = doublePreferencesKey("speed_absolute_angle_limit_deg")
     private val speedTargetSlewRateKey = doublePreferencesKey("speed_target_slew_rate_deg_per_sec")
     private val speedFeedbackTimeoutKey = intPreferencesKey("speed_feedback_timeout_ms")
+    private val yawTargetKey = doublePreferencesKey("yaw_target_deg_per_sec")
+    private val yawKpKey = doublePreferencesKey("yaw_kp_command_per_deg_per_sec")
     private val wheelDiameterKey = doublePreferencesKey("wheel_diameter_mm")
     private val driveRatioKey = doublePreferencesKey("drive_ratio")
     private val vmaxKey = intPreferencesKey("vmax")
@@ -130,6 +132,8 @@ object RobotSettings {
                 ?: defaults.speedTargetSlewRateDegPerSec,
             speedFeedbackTimeoutMs = (preferences[speedFeedbackTimeoutKey]
                 ?: defaults.speedFeedbackTimeoutMs.toInt()).toLong(),
+            yawTargetDegPerSec = preferences[yawTargetKey] ?: defaults.yawTargetDegPerSec,
+            yawKpCommandPerDegPerSec = preferences[yawKpKey] ?: defaults.yawKpCommandPerDegPerSec,
             wheelDiameterMm = preferences[wheelDiameterKey] ?: defaults.wheelDiameterMm,
             driveRatio = preferences[driveRatioKey] ?: defaults.driveRatio,
             vmax = preferences[vmaxKey] ?: defaults.vmax,
@@ -171,6 +175,8 @@ object RobotSettings {
             preferences[speedAbsoluteAngleLimitKey] = config.speedAbsoluteAngleLimitDeg
             preferences[speedTargetSlewRateKey] = config.speedTargetSlewRateDegPerSec
             preferences[speedFeedbackTimeoutKey] = config.speedFeedbackTimeoutMs.toInt()
+            preferences[yawTargetKey] = config.yawTargetDegPerSec
+            preferences[yawKpKey] = config.yawKpCommandPerDegPerSec
             preferences[wheelDiameterKey] = config.wheelDiameterMm
             preferences[driveRatioKey] = config.driveRatio
             preferences[vmaxKey] = config.vmax

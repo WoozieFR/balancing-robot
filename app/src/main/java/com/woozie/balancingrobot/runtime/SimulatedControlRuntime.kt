@@ -1,7 +1,9 @@
 package com.woozie.balancingrobot.runtime
 
 import com.woozie.balancingrobot.domain.control.applyMotorSigns
+import com.woozie.balancingrobot.domain.control.mixDifferential
 import com.woozie.balancingrobot.domain.control.pdStep
+import com.woozie.balancingrobot.domain.control.yawTurnStep
 import com.woozie.balancingrobot.domain.estimation.ComplementaryEstimator
 import com.woozie.balancingrobot.domain.estimation.accelAngleDeg
 import com.woozie.balancingrobot.domain.model.ControlOutput
@@ -43,10 +45,12 @@ class SimulatedControlRuntime(initialConfig: RobotConfig) {
         gyroRateDegPerSec: Double,
         dtSec: Double,
         targetDeg: Double = config.targetDeg,
+        yawRateDegPerSec: Double = 0.0,
+        yawTargetDegPerSec: Double = config.yawTargetDegPerSec,
     ): SimulationStep {
         val reference = accelAngleDeg(accel, config.axis, config.imuSign, config.zeroOffsetDeg)
             ?: return SimulationStep(null, null, FaultCode.ESTIMATE_INVALID)
-        return step(reference, gyroRateDegPerSec, dtSec, targetDeg)
+        return step(reference, gyroRateDegPerSec, dtSec, targetDeg, yawRateDegPerSec, yawTargetDegPerSec)
     }
 
     fun step(
@@ -54,6 +58,8 @@ class SimulatedControlRuntime(initialConfig: RobotConfig) {
         gyroRateDegPerSec: Double,
         dtSec: Double,
         targetDeg: Double = config.targetDeg,
+        yawRateDegPerSec: Double = 0.0,
+        yawTargetDegPerSec: Double = config.yawTargetDegPerSec,
     ): SimulationStep {
         val angle = estimator.step(gyroRateDegPerSec, dtSec, accelAngleDeg)
             ?: return SimulationStep(null, null, FaultCode.ESTIMATE_INVALID)
@@ -63,13 +69,28 @@ class SimulatedControlRuntime(initialConfig: RobotConfig) {
         } catch (_: IllegalArgumentException) {
             return SimulationStep(estimate, null, FaultCode.ESTIMATE_INVALID)
         }
+        val yaw = try {
+            yawTurnStep(
+                targetDegPerSec = yawTargetDegPerSec,
+                measuredDegPerSec = yawRateDegPerSec,
+                kpCommandPerDegPerSec = config.yawKpCommandPerDegPerSec,
+                commandLimit = config.commandLimit,
+            )
+        } catch (_: IllegalArgumentException) {
+            return SimulationStep(estimate, null, FaultCode.ESTIMATE_INVALID)
+        }
+        val mix = mixDifferential(base.boundedCommand, yaw.boundedCommand, config.commandLimit)
         val output = ControlOutput(
             targetDeg = targetDeg,
             errorDeg = base.errorDeg,
             rawCommand = base.rawCommand,
             boundedCommand = base.boundedCommand,
-            motorCommands = applyMotorSigns(base.boundedCommand, config.motorSigns),
-            saturated = base.saturated,
+            motorCommands = applyMotorSigns(listOf(mix.left, mix.right), config.motorSigns),
+            saturated = base.saturated || yaw.saturated || mix.saturated,
+            yawTargetDegPerSec = yawTargetDegPerSec,
+            yawRateDegPerSec = yawRateDegPerSec,
+            yawErrorDegPerSec = yaw.errorDegPerSec,
+            turnCommand = yaw.boundedCommand,
         )
         return SimulationStep(estimate, output, null)
     }

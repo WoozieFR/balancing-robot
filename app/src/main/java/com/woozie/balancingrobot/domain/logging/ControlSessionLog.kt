@@ -25,6 +25,10 @@ data class ControlLogRecord(
     val saturated: Boolean?,
     val motorCommand0: Int?,
     val motorCommand1: Int?,
+    val yawTargetDegPerSec: Double? = null,
+    val yawRateDegPerSec: Double? = null,
+    val yawErrorDegPerSec: Double? = null,
+    val turnCommand: Int? = null,
     val controlLatencyMs: Double?,
     val armState: String,
     val sampleStatus: String?,
@@ -96,11 +100,13 @@ class ControlSessionLog(private val capacity: Int = 100_000) {
                 "speed_loop_rate_hz,speed_filter_alpha,speed_target_angle_limit_deg," +
                 "speed_integral_gain_deg_per_cmps_s,speed_absolute_angle_limit_deg,speed_target_slew_rate_deg_per_sec," +
                 "speed_feedback_timeout_ms," +
+                "yaw_target_dps,yaw_kp_command_per_dps," +
                 "wheel_diameter_mm,drive_ratio," +
                 "vmax,motor_control_mode,pwm_max,command_limit,motor_id_0,motor_id_1,motor_sign_0,motor_sign_1,baud_rate,torque_limit," +
                 "imu_timeout_ms,fall_angle_deg,fall_duration_ms,manual_timeout_ms,inhibit_safety_auto_disarm,log_capacity," +
                 "web_port,error_deg,raw_command,bounded_command,saturated,motor_command_0," +
-                "motor_command_1,control_latency_ms,speed_feedback_sequence,speed_feedback_age_ms," +
+                "motor_command_1,yaw_target_dps,yaw_rate_dps,yaw_error_dps,turn_command,control_latency_ms," +
+                "speed_feedback_sequence,speed_feedback_age_ms," +
                 "speed_left_raw_steps_per_s,speed_right_raw_steps_per_s,speed_left_cmps,speed_right_cmps," +
                 "speed_mean_cmps,speed_filtered_cmps,speed_error_cmps,speed_correction_deg," +
                 "speed_integral_correction_deg,speed_target_slew_limited,speed_stale," +
@@ -140,6 +146,8 @@ class ControlSessionLog(private val capacity: Int = 100_000) {
                 .append(config.speedAbsoluteAngleLimitDeg).append(',')
                 .append(config.speedTargetSlewRateDegPerSec).append(',')
                 .append(config.speedFeedbackTimeoutMs).append(',')
+                .append(config.yawTargetDegPerSec).append(',')
+                .append(config.yawKpCommandPerDegPerSec).append(',')
                 .append(config.wheelDiameterMm).append(',')
                 .append(config.driveRatio).append(',')
                 .append(config.vmax).append(',')
@@ -165,6 +173,10 @@ class ControlSessionLog(private val capacity: Int = 100_000) {
                 .append(record.saturated ?: "").append(',')
                 .append(record.motorCommand0 ?: "").append(',')
                 .append(record.motorCommand1 ?: "").append(',')
+                .appendNullable(record.yawTargetDegPerSec).append(',')
+                .appendNullable(record.yawRateDegPerSec).append(',')
+                .appendNullable(record.yawErrorDegPerSec).append(',')
+                .append(record.turnCommand ?: "").append(',')
                 .appendNullable(record.controlLatencyMs).append(',')
                 .append(record.speedFeedbackSequence ?: "").append(',')
                 .appendNullable(record.speedFeedbackAgeMs).append(',')

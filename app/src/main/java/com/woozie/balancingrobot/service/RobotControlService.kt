@@ -958,6 +958,8 @@ class RobotControlService : Service() {
             gyroDps,
             dtSec,
             targetDeg = speedOutput.effectiveTargetDeg,
+            yawRateDegPerSec = gyroZDps ?: 0.0,
+            yawTargetDegPerSec = activeConfig.yawTargetDegPerSec,
         )
         val estimate = step?.estimate
         val accelAngle = estimate?.accelAngleDeg
@@ -1001,6 +1003,12 @@ class RobotControlService : Service() {
                     lastRawCommand = control.rawCommand,
                     lastCommand = control.boundedCommand,
                     saturated = control.saturated,
+                    yawTargetDegPerSec = control.yawTargetDegPerSec,
+                    yawRateDegPerSec = control.yawRateDegPerSec,
+                    yawErrorDegPerSec = control.yawErrorDegPerSec,
+                    turnCommand = control.turnCommand,
+                    motorCommand0 = control.motorCommands.getOrNull(0) ?: 0,
+                    motorCommand1 = control.motorCommands.getOrNull(1) ?: 0,
                     controlLatencyMs = latencyMs,
                     faultMessage = null,
                 ))
@@ -1127,6 +1135,10 @@ class RobotControlService : Service() {
                 saturated = control?.saturated,
                 motorCommand0 = control?.motorCommands?.getOrNull(0),
                 motorCommand1 = control?.motorCommands?.getOrNull(1),
+                yawTargetDegPerSec = control?.yawTargetDegPerSec,
+                yawRateDegPerSec = control?.yawRateDegPerSec,
+                yawErrorDegPerSec = control?.yawErrorDegPerSec,
+                turnCommand = control?.turnCommand,
                 controlLatencyMs = controlLatencyMs,
                 armState = _state.value.motors.armState.name,
                 sampleStatus = sampleStatus,
@@ -1221,6 +1233,8 @@ class RobotControlService : Service() {
             put("speedAbsoluteAngleLimitDeg", config.speedAbsoluteAngleLimitDeg)
             put("speedTargetSlewRateDegPerSec", config.speedTargetSlewRateDegPerSec)
             put("speedFeedbackTimeoutMs", config.speedFeedbackTimeoutMs)
+            put("yawTargetDegPerSec", config.yawTargetDegPerSec)
+            put("yawKpCommandPerDegPerSec", config.yawKpCommandPerDegPerSec)
             put("wheelDiameterMm", config.wheelDiameterMm)
             put("driveRatio", config.driveRatio)
             put("speedFeedbackStale", speed.stale)
@@ -1250,6 +1264,12 @@ class RobotControlService : Service() {
             put("fallDurationMs", config.fallDurationMs)
             put("manualTimeoutMs", config.manualTimeoutMs)
             put("controlCommand", balance.lastCommand)
+            put("controlYawTargetDegPerSec", balance.yawTargetDegPerSec)
+            put("yawRateDegPerSec", balance.yawRateDegPerSec)
+            put("yawErrorDegPerSec", balance.yawErrorDegPerSec)
+            put("turnCommand", balance.turnCommand)
+            put("balanceMotorCommand0", balance.motorCommand0)
+            put("balanceMotorCommand1", balance.motorCommand1)
             balance.lastErrorDeg?.let { put("controlErrorDeg", it) }
             balance.controlLatencyMs?.let { put("controlLatencyMs", it) }
             put("inhibitSafetyAutoDisarm", config.inhibitSafetyAutoDisarm)
@@ -1358,6 +1378,10 @@ class RobotControlService : Service() {
                         WebProtocol.payloadInt(command, "speedFeedbackTimeoutMs")
                             ?: _state.value.config.speedFeedbackTimeoutMs.toInt()
                         ).toLong(),
+                    yawTargetDegPerSec = WebProtocol.payloadDouble(command, "yawTargetDegPerSec")
+                        ?: _state.value.config.yawTargetDegPerSec,
+                    yawKpCommandPerDegPerSec = WebProtocol.payloadDouble(command, "yawKpCommandPerDegPerSec")
+                        ?: _state.value.config.yawKpCommandPerDegPerSec,
                     wheelDiameterMm = WebProtocol.payloadDouble(command, "wheelDiameterMm")
                         ?: _state.value.config.wheelDiameterMm,
                     driveRatio = WebProtocol.payloadDouble(command, "driveRatio")

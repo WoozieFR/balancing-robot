@@ -93,7 +93,9 @@
             <label class="parameter-row">Trim d'angle (°) <output id="target-value">0</output><input id="target" type="range" min="-180" max="180" step="0.1" value="0"></label>
             <label class="parameter-row">Kp <output id="kp-value">0</output><input id="kp" type="range" min="0" max="2000" step="1" value="0"></label>
             <label class="parameter-row">Kd <output id="kd-value">0</output><input id="kd" type="range" min="0" max="2000" step="1" value="0"></label>
-            <div class="pd-readout"><span>cible effective</span><strong id="speed-effective-target">—</strong><span>correction vitesse</span><strong id="speed-correction">—</strong><span>auto-trim intégral</span><strong id="speed-integral">—</strong></div>
+            <label class="parameter-row">Consigne rotation (°/s) <output id="yaw-target-value">0</output><input id="yaw-target" type="range" min="-360" max="360" step="1" value="0"></label>
+            <label class="parameter-row">Kp yaw (commande / °/s) <output id="yaw-kp-value">1</output><input id="yaw-kp" type="range" min="0" max="20" step="0.01" value="1"></label>
+            <div class="pd-readout"><span>cible effective</span><strong id="speed-effective-target">—</strong><span>correction vitesse</span><strong id="speed-correction">—</strong><span>auto-trim intégral</span><strong id="speed-integral">—</strong><span>rotation</span><strong id="yaw-feedback-state">inactive</strong><span>u_turn</span><strong id="turn-command">0</strong></div>
           </article>
         </div>
       </section>

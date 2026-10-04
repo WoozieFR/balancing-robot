@@ -939,6 +939,18 @@ private fun BalanceTuningCard(
     ParameterSlider("Timeout retour vitesse (ms)", draft.speedFeedbackTimeoutMs.toFloat(), 40f..500f, 91, liveEditable) {
         change(draft.copy(speedFeedbackTimeoutMs = it.toLong()))
     }
+    ParameterSlider("Consigne rotation (°/s)", draft.yawTargetDegPerSec, -360f..360f, 143, liveEditable) {
+        change(draft.copy(yawTargetDegPerSec = it.toDouble()))
+    }
+    ParameterSlider(
+        "Kp yaw (commande / °/s)",
+        draft.yawKpCommandPerDegPerSec,
+        0f..20f,
+        199,
+        liveEditable,
+    ) {
+        change(draft.copy(yawKpCommandPerDegPerSec = it.toDouble()))
+    }
     ParameterSlider("Diamètre roue (mm)", draft.wheelDiameterMm, 10f..300f, 289, guardedEditable) {
         change(draft.copy(wheelDiameterMm = it.toDouble()))
     }
@@ -988,6 +1000,12 @@ private fun BalanceTuningCard(
     Text(
         "Vitesse : gauche ${number(speedLoop.leftCmPerSec)} · droite ${number(speedLoop.rightCmPerSec)} · " +
             "moyenne filtrée ${number(speedLoop.filteredCmPerSec)} cm/s",
+        style = MaterialTheme.typography.bodySmall,
+    )
+    Text(
+        "Rotation : cible ${number(balance.yawTargetDegPerSec)} °/s · gyro Z ${number(balance.yawRateDegPerSec)} °/s · " +
+            "erreur ${number(balance.yawErrorDegPerSec)} °/s · u_turn ${balance.turnCommand}" +
+            if (balance.yawTargetDegPerSec == 0.0) " · INACTIVE" else "",
         style = MaterialTheme.typography.bodySmall,
     )
     Text(

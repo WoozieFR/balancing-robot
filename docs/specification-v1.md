@@ -274,8 +274,17 @@ initialisé depuis l'accéléromètre. L'opération est refusée pendant
 errorDeg = targetDeg − estimatedAngleDeg
 rawCommand = kp × errorDeg − kd × gyroRateDegPerSec
 boundedCommand = round(clamp(rawCommand, -vmax, +vmax))
-motorCommand[i] = motorSign[i] × boundedCommand
+u_left_logical = clamp(boundedCommand + u_turn, -commandLimit, +commandLimit)
+u_right_logical = clamp(boundedCommand - u_turn, -commandLimit, +commandLimit)
+motorCommand[i] = motorSign[i] × u_logical[i]
 ```
+
+La boucle yaw est inactive si `yawTargetDegPerSec == 0`. Sinon elle mesure la
+vitesse verticale `gyroZ` et calcule `u_turn = clamp(yawKpCommandPerDegPerSec ×
+(yawTargetDegPerSec − gyroZ), -commandLimit, +commandLimit)`. Le mélange
+différentiel est effectué avant les signes moteurs ; il permet une rotation sur
+place quand `boundedCommand == 0`, tout en conservant la contribution commune
+de l'équilibrage.
 
 Règles :
 
@@ -299,6 +308,8 @@ Règles :
 | Cible | 0° | -180° à +180° | Oui | Oui, limitée à ±15° |
 | Kp | 0 | 0 à 2000 | Oui | Oui |
 | Kd | 0 | 0 à 2000 | Oui | Oui |
+| Consigne yaw | 0°/s | -360°/s à +360°/s | Oui | Oui |
+| Kp yaw | 1 commande/(°/s) | 0 à 20 | Oui | Oui |
 | Vmax | 6000 | 0 à 20000 | Oui | Non |
 | Mode moteur | vitesse | vitesse ou PWM | Oui | Non |
 | PWM max | 1000 | 0 à 1000 | Oui | Non |

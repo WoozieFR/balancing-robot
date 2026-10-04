@@ -74,6 +74,14 @@ object RobotConfigValidator {
             if (config.speedFeedbackTimeoutMs !in 40..500) {
                 error("speedFeedbackTimeoutMs", "must be in [40, 500] ms")
             }
+            if (!config.yawTargetDegPerSec.isFinite() || config.yawTargetDegPerSec !in -360.0..360.0) {
+                error("yawTargetDegPerSec", "must be finite and in [-360, 360] deg/s")
+            }
+            if (!config.yawKpCommandPerDegPerSec.isFinite() ||
+                config.yawKpCommandPerDegPerSec !in 0.0..20.0
+            ) {
+                error("yawKpCommandPerDegPerSec", "must be finite and in [0, 20]")
+            }
             if (!config.wheelDiameterMm.isFinite() || config.wheelDiameterMm !in 10.0..300.0) {
                 error("wheelDiameterMm", "must be finite and in [10, 300] mm")
             }

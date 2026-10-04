@@ -143,6 +143,11 @@ const renderDiagnostics = (diagnostics) => {
   text('speed-effective-target', number(diagnostics.speedEffectiveTargetDeg, '°'));
   text('speed-correction', number(diagnostics.speedCorrectionDeg, '°'));
   text('speed-integral', number(diagnostics.speedIntegralCorrectionDeg, '°'));
+  const yawTarget = Number(diagnostics.yawTargetDegPerSec || 0);
+  text('yaw-feedback-state', yawTarget === 0
+    ? 'inactive · consigne 0'
+    : `actif · gyro Z ${number(diagnostics.yawRateDegPerSec, ' °/s')} · erreur ${number(diagnostics.yawErrorDegPerSec, ' °/s')}`);
+  text('turn-command', diagnostics.turnCommand ?? 0);
 
   text('motor-state', `${armState} · ${diagnostics.motorConnected ? 'USB connecté' : 'USB arrêté'}`);
   text('motor-command', `${diagnostics.motorCommand ?? 0} · deadman ${diagnostics.motorDeadmanHeld ? 'tenu' : 'relâché'}`);
@@ -181,7 +186,9 @@ const renderDiagnostics = (diagnostics) => {
     ['speed-integral-gain', diagnostics.speedIntegralGainDegPerCmPerSecSec],
     ['speed-absolute-angle-limit', diagnostics.speedAbsoluteAngleLimitDeg],
     ['speed-target-slew', diagnostics.speedTargetSlewRateDegPerSec],
-    ['speed-feedback-timeout', diagnostics.speedFeedbackTimeoutMs], ['wheel-diameter', diagnostics.wheelDiameterMm],
+    ['speed-feedback-timeout', diagnostics.speedFeedbackTimeoutMs],
+    ['yaw-target', diagnostics.yawTargetDegPerSec], ['yaw-kp', diagnostics.yawKpCommandPerDegPerSec],
+    ['wheel-diameter', diagnostics.wheelDiameterMm],
     ['drive-ratio', diagnostics.driveRatio], ['zero-offset', diagnostics.zeroOffsetDeg], ['vmax', diagnostics.vmax],
     ['pwm-max', diagnostics.pwmMax], ['torque-limit', diagnostics.torqueLimit], ['imu-timeout', diagnostics.imuTimeoutMs],
     ['fall-angle', diagnostics.fallAngleDeg], ['fall-duration', diagnostics.fallDurationMs], ['manual-timeout', diagnostics.manualTimeoutMs]]
@@ -217,46 +224,56 @@ const sendCommand = (type, payload = {}) => {
   return id;
 };
 
-const currentParameters = () => ({
-  axis: $('axis').value,
-  imuSign: Number($('imu-sign').value),
-  alpha: Number($('alpha').value),
-  targetDeg: Number($('target').value),
-  kp: Number($('kp').value),
-  kd: Number($('kd').value),
-  speedLoopEnabled: $('speed-loop-enabled').checked,
-  speedTargetCmPerSec: Number($('speed-target').value),
-  speedTargetLimitCmPerSec: Number($('speed-target-limit').value),
-  speedKevDegPerCmPerSec: Number($('speed-kev').value),
-  speedLoopRateHz: Number($('speed-loop-rate').value),
-  speedFilterAlpha: Number($('speed-filter-alpha').value),
-  speedTargetAngleLimitDeg: Number($('speed-angle-limit').value),
-  speedIntegralGainDegPerCmPerSecSec: Number($('speed-integral-gain').value),
-  speedAbsoluteAngleLimitDeg: Number($('speed-absolute-angle-limit').value),
-  speedTargetSlewRateDegPerSec: Number($('speed-target-slew').value),
-  speedFeedbackTimeoutMs: Number($('speed-feedback-timeout').value),
-  wheelDiameterMm: Number($('wheel-diameter').value),
-  driveRatio: Number($('drive-ratio').value),
-  zeroOffsetDeg: Number($('zero-offset').value),
-  vmax: Number($('vmax').value),
-  motorControlMode: $('motor-control-mode').value,
-  pwmMax: Number($('pwm-max').value),
-  torqueLimit: Number($('torque-limit').value),
-  imuTimeoutMs: Number($('imu-timeout').value),
-  fallAngleDeg: Number($('fall-angle').value),
-  fallDurationMs: Number($('fall-duration').value),
-  manualTimeoutMs: Number($('manual-timeout').value),
-  inhibitSafetyAutoDisarm: $('safety-inhibition').checked,
-});
+// Web controls are patches, not a stale snapshot of every input. This keeps a
+// fast slider update from overwriting another value that was changed by the
+// Android UI or by a concurrent Web client.
+const parameterKeyById = {
+  alpha: 'alpha',
+  target: 'targetDeg',
+  kp: 'kp',
+  kd: 'kd',
+  'speed-loop-enabled': 'speedLoopEnabled',
+  'speed-target': 'speedTargetCmPerSec',
+  'speed-target-limit': 'speedTargetLimitCmPerSec',
+  'speed-kev': 'speedKevDegPerCmPerSec',
+  'speed-loop-rate': 'speedLoopRateHz',
+  'speed-filter-alpha': 'speedFilterAlpha',
+  'speed-angle-limit': 'speedTargetAngleLimitDeg',
+  'speed-integral-gain': 'speedIntegralGainDegPerCmPerSecSec',
+  'speed-absolute-angle-limit': 'speedAbsoluteAngleLimitDeg',
+  'speed-target-slew': 'speedTargetSlewRateDegPerSec',
+  'speed-feedback-timeout': 'speedFeedbackTimeoutMs',
+  'yaw-target': 'yawTargetDegPerSec',
+  'yaw-kp': 'yawKpCommandPerDegPerSec',
+  'zero-offset': 'zeroOffsetDeg',
+  vmax: 'vmax',
+  'pwm-max': 'pwmMax',
+  'torque-limit': 'torqueLimit',
+  'imu-timeout': 'imuTimeoutMs',
+  'fall-angle': 'fallAngleDeg',
+  'fall-duration': 'fallDurationMs',
+  'manual-timeout': 'manualTimeoutMs',
+  'wheel-diameter': 'wheelDiameterMm',
+  'drive-ratio': 'driveRatio',
+  axis: 'axis',
+  'imu-sign': 'imuSign',
+  'motor-control-mode': 'motorControlMode',
+  'safety-inhibition': 'inhibitSafetyAutoDisarm',
+};
+
+const pendingPatch = () => Object.fromEntries(
+  [...pendingParameters.entries()]
+    .map(([id, value]) => [parameterKeyById[id], value])
+    .filter(([key]) => Boolean(key)),
+);
 
 const scheduleParameterUpdate = () => {
   if (parameterUpdateTimer !== null) window.clearTimeout(parameterUpdateTimer);
   parameterUpdateTimer = window.setTimeout(() => {
     parameterUpdateTimer = null;
-    const speedTargetOnly = pendingParameters.size === 1 && pendingParameters.has('speed-target');
-    const id = speedTargetOnly
-      ? sendCommand('set_speed_target', { speedTargetCmPerSec: Number($('speed-target').value) })
-      : sendCommand('update_parameters', currentParameters());
+    const payload = pendingPatch();
+    if (Object.keys(payload).length === 0) return;
+    const id = sendCommand('update_parameters', payload);
     if (id) parameterCommandIds.add(id);
   }, 80);
 };
@@ -323,7 +340,7 @@ const attachPrecisionInput = (range) => {
   editor.addEventListener('change', applyEditor);
 };
 
-const parameterIds = ['alpha', 'target', 'kp', 'kd', 'speed-target', 'speed-target-limit', 'speed-kev', 'speed-loop-rate', 'speed-filter-alpha', 'speed-angle-limit', 'speed-integral-gain', 'speed-absolute-angle-limit', 'speed-target-slew', 'speed-feedback-timeout', 'zero-offset', 'vmax', 'pwm-max', 'torque-limit', 'imu-timeout', 'fall-angle', 'fall-duration', 'manual-timeout', 'wheel-diameter', 'drive-ratio'];
+const parameterIds = ['alpha', 'target', 'kp', 'kd', 'speed-target', 'speed-target-limit', 'speed-kev', 'speed-loop-rate', 'speed-filter-alpha', 'speed-angle-limit', 'speed-integral-gain', 'speed-absolute-angle-limit', 'speed-target-slew', 'speed-feedback-timeout', 'yaw-target', 'yaw-kp', 'zero-offset', 'vmax', 'pwm-max', 'torque-limit', 'imu-timeout', 'fall-angle', 'fall-duration', 'manual-timeout', 'wheel-diameter', 'drive-ratio'];
 parameterIds.forEach((id) => attachPrecisionInput($(id)));
 
 $('speed-loop-enabled').addEventListener('change', () => { markParameterPending('speed-loop-enabled', $('speed-loop-enabled').checked); clampTargetToAngleLimit(); scheduleParameterUpdate(); });

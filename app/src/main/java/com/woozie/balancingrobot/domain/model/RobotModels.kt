@@ -58,6 +58,10 @@ data class ControlOutput(
     val boundedCommand: Int,
     val motorCommands: List<Int>,
     val saturated: Boolean,
+    val yawTargetDegPerSec: Double = 0.0,
+    val yawRateDegPerSec: Double = 0.0,
+    val yawErrorDegPerSec: Double = 0.0,
+    val turnCommand: Int = 0,
 )
 
 data class RobotFault(
@@ -92,6 +96,10 @@ data class RobotConfig(
     /** Maximum target-angle movement per second. */
     val speedTargetSlewRateDegPerSec: Double = 30.0,
     val speedFeedbackTimeoutMs: Long = 100,
+    /** Desired yaw rate. Zero explicitly disables the yaw correction loop. */
+    val yawTargetDegPerSec: Double = 0.0,
+    /** Proportional yaw gain in motor-command units per deg/s. */
+    val yawKpCommandPerDegPerSec: Double = 1.0,
     val wheelDiameterMm: Double = 40.0,
     /** Motor revolutions per wheel revolution. */
     val driveRatio: Double = 1.0,

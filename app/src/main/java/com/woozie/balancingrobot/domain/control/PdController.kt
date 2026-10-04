@@ -40,7 +40,4 @@ fun pdStep(
 }
 
 fun applyMotorSigns(baseCommand: Int, signs: List<Int>): List<Int> =
-    signs.map { sign ->
-        require(sign == -1 || sign == 1) { "motor sign must be -1 or 1" }
-        baseCommand * sign
-    }
+    applyMotorSigns(List(signs.size) { baseCommand }, signs)
