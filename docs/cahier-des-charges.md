@@ -273,8 +273,9 @@ L'application DOIT fournir au minimum les préréglages suivants :
 
 ### 9.1 Boucle externe de vitesse
 
-- **VEL-001 —** Une boucle externe DOIT transformer une consigne de vitesse du
-  robot en angle cible pour le PD interne.
+- **VEL-001 —** La boucle externe DOIT transformer la commande avant/arrière du
+  joystick en une inclinaison cible pour le PD interne, façon Segway. Elle ne
+  DOIT PAS utiliser un PI de vitesse pour piloter directement le déplacement.
 - **VEL-002 —** La vitesse de chaque roue DOIT provenir de `PresentVelocity`,
   après application du signe moteur configuré.
 - **VEL-003 —** La vitesse physique DOIT être calculée en cm/s avec 4096 pas
@@ -284,10 +285,13 @@ L'application DOIT fournir au minimum les préréglages suivants :
   vitesse_droite) / 2`.
 - **VEL-005 —** La vitesse moyenne DOIT être filtrée par une EMA dont l'alpha
   est réglable, avec `0,5` par défaut.
-- **VEL-006 —** La loi de commande DOIT être calculée autour du trim :
-  `correction = clamp(Kev × erreur_vitesse + autoTrim, ±limite_correction)`,
-  avec `autoTrim += Ki × erreur_vitesse × dt` et anti-windup.
-- **VEL-007 —** La cible DOIT ensuite respecter une limite absolue symétrique
+- **VEL-006 —** L'inclinaison joystick DOIT être calculée comme
+  `joystick / limite × joystickMaxLeanDeg`, avec bande morte et pente
+  maximale réglables (3° et 30°/s par défaut).
+- **VEL-007 —** La cible finale DOIT être la somme de `targetDeg`,
+  `autoTrim`, de l'inclinaison joystick et, si activé sans commande utilisateur,
+  du freinage proportionnel `clamp(-brakeKp × vitesse, ±brakeLimit)`.
+- **VEL-007a —** La cible DOIT respecter une limite absolue symétrique
   (±15° par défaut) et une pente maximale réglable (30°/s par défaut).
 - **VEL-008 —** La boucle DOIT fonctionner à 50 Hz par défaut, avec une cadence
   réglable de 5 à 100 Hz. Une cadence supérieure à celle du retour moteur PEUT
@@ -296,27 +300,27 @@ L'application DOIT fournir au minimum les préréglages suivants :
   `abs(vitesse_moyenne_filtrée) < seuil`, avec un seuil configurable (0,5 cm/s
   par défaut) et une durée continue configurable (700 ms par défaut). La
   vitesse testée est la moyenne des deux roues, et non chaque roue séparément.
-- **VEL-008b —** Lors du retour de la consigne vitesse vers zéro, l'intégrale
-  de déplacement DOIT être transférée sans saut vers le checkpoint de repos,
-  proportionnellement à la consigne vitesse effectivement appliquée. Aucune
-  intégration ne doit être effectuée pendant ce transfert.
-- **VEL-008c —** Une manœuvre DOIT être considérée active si la consigne de
-  translation ou la consigne de rotation est non nulle. Un yaw pur DOIT laisser
-  l'intégrateur de vitesse évoluer pour compenser la vitesse longitudinale
-  parasite induite par la rotation ; à sa fin, il DOIT conserver cette valeur
-  pendant la stabilisation et ne DOIT PAS appliquer le transfert du checkpoint
-  réservé à une translation.
+- **VEL-008b —** La boucle DOIT exposer exactement trois états : `DRIVING`,
+  `WAIT_REST` et `REST`. Une translation, un yaw ou une combinaison des deux
+  placent le système en `DRIVING` et figent l'auto-trim. Le relâchement de toutes
+  les commandes place le système en `WAIT_REST`; la sortie de la qualification
+  de repos remet son chronomètre à zéro. `REST` ne doit pas être quitté lorsqu'une
+  charge provoque une dérive : cette dérive sert à réapprendre l'auto-trim.
+- **VEL-008c —** En `REST`, l'auto-trim DOIT évoluer uniquement sur une nouvelle
+  paire de vitesses fraîche, selon `autoTrim += Ki × (-vitesse_filtrée) × dt`,
+  avec une limite absolue configurable. Il ne doit pas exister de second
+  intégrateur de déplacement.
 - **VEL-009 —** Une paire de vitesses périmée NE DOIT PAS effacer l'auto-trim
-  appris. La dernière cible est tenue brièvement puis ramenée progressivement
-  vers le checkpoint de repos. Avant la première paire valide, la cible vaut le
-  trim borné.
-- **VEL-010 —** La consigne, `Kev`, `Ki`, les limites, la pente, l'alpha, la
-  cadence et le timeout DOIVENT être modifiables en direct pendant
-  l'équilibrage. Le diamètre de roue et le rapport de transmission exigent un
-  désarmement.
+  appris ni l'intégrer sur l'intervalle perdu. Le premier échantillon frais après
+  récupération DOIT réinitialiser l'EMA sur la mesure courante. Avant la première
+  paire valide, l'état initial `REST` autorise l'apprentissage.
+- **VEL-010 —** La commande joystick, les limites d'inclinaison et de freinage,
+  `Ki`, l'alpha, la cadence, le seuil, la durée de repos et le timeout DOIVENT
+  être modifiables en direct pendant l'équilibrage. Le diamètre de roue et le
+  rapport de transmission exigent un désarmement.
 - **VEL-011 —** Toutes les entrées, conversions, valeurs filtrées, erreurs,
-  corrections, saturations, cadences et âges DOIVENT être affichables et
-  exportables dans le CSV de session.
+  inclinaisons, auto-trim, freinage, états, saturations, cadences et âges
+  DOIVENT être affichables et exportables dans le CSV de session.
 - **VEL-012 —** La boucle PEUT être désactivée ; le PD utilise alors directement
   le trim d'angle.
 

@@ -598,12 +598,16 @@ control_sequence,control_submitted_ns,motor_write_start_ns,motor_write_end_ns,
 service_state,arm_state,preset,fault_code,source
 ```
 
-Pour la boucle vitesse, le journal ajoute le diamètre, le rapport de
-transmission, la consigne et sa limite, `Kev`, `Ki`, l'auto-trim, l'alpha, la
-cadence demandée, la limite de correction autour du trim, la limite absolue et
-la pente maximale, les deux vitesses brutes, les deux conversions en cm/s, la
-moyenne, l'EMA, l'erreur, la correction angulaire, la cible PD effective, la
-saturation, la limitation de pente, l'âge du retour et les cadences mesurées.
+Pour la commande de mouvement, le journal ajoute le diamètre, le rapport de
+transmission, la consigne et sa limite, l'inclinaison joystick demandée et
+appliquée, le slew de cette inclinaison, le gain et la limite de freinage,
+`Ki` d'auto-trim, l'alpha, la cadence demandée, le seuil et la durée de repos,
+la limite d'auto-trim, la limite absolue et la pente maximale, les deux vitesses
+brutes, les deux conversions en cm/s, la moyenne, l'EMA, l'erreur, le terme
+d'auto-trim, le freinage, l'état `DRIVING`/`WAIT_REST`/`REST`, la cible PD
+effective, la saturation, la limitation de pente, l'âge du retour et les
+cadences mesurées. Les paramètres historiques `Kev` et de rampe de vitesse sont
+conservés uniquement pour compatibilité de schéma.
 
 Les colonnes non applicables à un événement restent vides. L'export réalise une
 copie cohérente du tampon et ne le bloque pas pendant toute la conversion.

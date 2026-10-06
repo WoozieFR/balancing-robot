@@ -83,8 +83,18 @@ data class RobotConfig(
     val kp: Double = 0.0,
     val kd: Double = 0.0,
     val speedLoopEnabled: Boolean = true,
+    /** User command range retained as the joystick input domain (cm/s equivalent). */
     val speedTargetCmPerSec: Double = 0.0,
     val speedTargetLimitCmPerSec: Double = 10.0,
+    /** Maximum forward/backward lean commanded by the joystick. */
+    val joystickMaxLeanDeg: Double = 3.0,
+    /** Slew rate applied to the joystick lean term. */
+    val joystickLeanSlewRateDegPerSec: Double = 30.0,
+    /** Dead-zone in the command domain before a maneuver is considered active. */
+    val joystickDeadbandCmPerSec: Double = 0.1,
+    /** Optional proportional braking correction, disabled by default. */
+    val brakeKpDegPerCmPerSec: Double = 0.0,
+    val brakeLimitDeg: Double = 2.0,
     /** Maximum speed-target movement per second. */
     val speedTargetSlewRateCmPerSec: Double = 20.0,
     val speedKevDegPerCmPerSec: Double = 0.0,

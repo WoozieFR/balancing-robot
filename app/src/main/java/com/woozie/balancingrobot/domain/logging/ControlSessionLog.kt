@@ -46,6 +46,13 @@ data class ControlLogRecord(
     val speedErrorCmPerSec: Double? = null,
     val speedCorrectionDeg: Double? = null,
     val speedIntegralCorrectionDeg: Double? = null,
+    val speedAutoTrimDeg: Double? = null,
+    val speedRequestedLeanDeg: Double? = null,
+    val speedAppliedLeanDeg: Double? = null,
+    val speedBrakeCorrectionDeg: Double? = null,
+    val speedAutoTrimState: String? = null,
+    val speedSettledDurationSec: Double? = null,
+    val speedQuiet: Boolean? = null,
     val speedTargetSlewLimited: Boolean? = null,
     val speedStale: Boolean? = null,
     val speedTargetSaturated: Boolean? = null,
@@ -103,9 +110,11 @@ class ControlSessionLog(private val capacity: Int = 100_000) {
             "timestamp_ns,received_timestamp_ns,accel_x_mps2,accel_y_mps2,accel_z_mps2," +
                 "gyro_x_dps,gyro_y_dps,gyro_z_dps,accel_angle_deg,estimated_angle_deg," +
                 "gyro_rate_dps,dt_s,schema_version,axis,imu_sign,zero_offset_deg,alpha,angle_trim_deg,target_deg,kp,kd," +
-                "speed_loop_enabled,speed_target_cmps,speed_target_limit_cmps,speed_kev_deg_per_cmps," +
-                "speed_target_slew_rate_cm_per_sec,speed_loop_rate_hz,speed_filter_alpha,speed_target_angle_limit_deg," +
+                "speed_loop_enabled,speed_target_cmps,speed_target_limit_cmps,speed_target_slew_rate_cm_per_sec," +
+                "speed_kev_deg_per_cmps,speed_loop_rate_hz,speed_filter_alpha,speed_target_angle_limit_deg," +
                 "speed_integral_gain_deg_per_cmps_s,speed_absolute_angle_limit_deg,speed_target_slew_rate_deg_per_sec," +
+                "joystick_max_lean_deg,joystick_lean_slew_rate_deg_per_sec,joystick_deadband_cmps," +
+                "brake_kp_deg_per_cmps,brake_limit_deg," +
                 "speed_feedback_timeout_ms,speed_quiet_threshold_cmps,speed_quiet_duration_ms," +
                 "yaw_target_dps,yaw_kp_command_per_dps," +
                 "wheel_diameter_mm,drive_ratio," +
@@ -116,7 +125,9 @@ class ControlSessionLog(private val capacity: Int = 100_000) {
                 "speed_feedback_sequence,speed_feedback_age_ms," +
                 "speed_left_raw_steps_per_s,speed_right_raw_steps_per_s,speed_left_cmps,speed_right_cmps," +
                 "speed_mean_cmps,speed_filtered_cmps,speed_error_cmps,speed_correction_deg," +
-                "speed_integral_correction_deg,speed_target_slew_limited,speed_stale," +
+                "speed_integral_correction_deg,speed_auto_trim_deg,speed_requested_lean_deg," +
+                "speed_applied_lean_deg,speed_brake_correction_deg,speed_auto_trim_state," +
+                "speed_settled_duration_s,speed_quiet,speed_target_slew_limited,speed_stale," +
                 "speed_target_saturated,speed_loop_actual_hz,speed_feedback_actual_hz,arm_state,sample_status," +
                 "gamepad_source,gamepad_neutral_reason,gamepad_command_age_ms,gamepad_sequence," +
                 "gamepad_deadman_held,gamepad_speed_target_cmps,gamepad_yaw_target_dps",
@@ -155,6 +166,11 @@ class ControlSessionLog(private val capacity: Int = 100_000) {
                 .append(config.speedIntegralGainDegPerCmPerSecSec).append(',')
                 .append(config.speedAbsoluteAngleLimitDeg).append(',')
                 .append(config.speedTargetSlewRateDegPerSec).append(',')
+                .append(config.joystickMaxLeanDeg).append(',')
+                .append(config.joystickLeanSlewRateDegPerSec).append(',')
+                .append(config.joystickDeadbandCmPerSec).append(',')
+                .append(config.brakeKpDegPerCmPerSec).append(',')
+                .append(config.brakeLimitDeg).append(',')
                 .append(config.speedFeedbackTimeoutMs).append(',')
                 .append(config.speedQuietThresholdCmPerSec).append(',')
                 .append(config.speedQuietDurationMs).append(',')
@@ -201,6 +217,13 @@ class ControlSessionLog(private val capacity: Int = 100_000) {
                 .appendNullable(record.speedErrorCmPerSec).append(',')
                 .appendNullable(record.speedCorrectionDeg).append(',')
                 .appendNullable(record.speedIntegralCorrectionDeg).append(',')
+                .appendNullable(record.speedAutoTrimDeg).append(',')
+                .appendNullable(record.speedRequestedLeanDeg).append(',')
+                .appendNullable(record.speedAppliedLeanDeg).append(',')
+                .appendNullable(record.speedBrakeCorrectionDeg).append(',')
+                .append(record.speedAutoTrimState ?: "").append(',')
+                .appendNullable(record.speedSettledDurationSec).append(',')
+                .append(record.speedQuiet ?: "").append(',')
                 .append(record.speedTargetSlewLimited ?: "").append(',')
                 .append(record.speedStale ?: "").append(',')
                 .append(record.speedTargetSaturated ?: "").append(',')

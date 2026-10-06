@@ -255,7 +255,13 @@ data class RobotConfig(
     val speedLoopEnabled: Boolean = true,
     val speedTargetCmPerSec: Double = 0.0,
     val speedTargetLimitCmPerSec: Double = 10.0,
-    val speedKevDegPerCmPerSec: Double = 0.0,
+    val joystickMaxLeanDeg: Double = 3.0,
+    val joystickLeanSlewRateDegPerSec: Double = 30.0,
+    val joystickDeadbandCmPerSec: Double = 0.1,
+    val brakeKpDegPerCmPerSec: Double = 0.0,
+    val brakeLimitDeg: Double = 2.0,
+    val speedTargetSlewRateCmPerSec: Double = 20.0,
+    val speedKevDegPerCmPerSec: Double = 0.0, // compatibilité de schéma
     val speedLoopRateHz: Int = 50,
     val speedFilterAlpha: Double = 0.5,
     val speedTargetAngleLimitDeg: Double = 10.0,
@@ -528,6 +534,9 @@ numériques.
 
 ### 8.4 Boucle externe de vitesse
 
+`VelocityOuterLoop` ne ferme plus une boucle PI de vitesse. Il transforme la
+commande de déplacement en inclinaison façon Segway, tout en séparant cette
+commande utilisateur de l'auto-trim appris au repos et du freinage optionnel.
 Le worker de télémétrie fournit une paire atomique des dernières vitesses. Pour
 chaque moteur, la valeur est d'abord multipliée par son `motorSign`, puis
 convertie avec :
@@ -538,10 +547,12 @@ v_cm_s = PresentVelocity × (π × wheelDiameterMm / 10)
 v_mean = (v_left + v_right) / 2
 v_filtered = speedFilterAlpha × v_mean
              + (1 − speedFilterAlpha) × v_filtered_previous
-speed_error = v_target − v_filtered
-autoTrim = clamp(autoTrim + Ki × speed_error × dt, ±angleLimit)
-correction = clamp(Kev × speed_error + autoTrim, ±angleLimit)
-angle_target = slew(clamp(targetDeg + correction,
+joystick_request = clamp(v_target / speedTargetLimitCmPerSec, -1, +1)
+lean_request = joystick_request × joystickMaxLeanDeg
+lean_applied = slew(lean_request, joystickLeanSlewRateDegPerSec)
+brake = clamp(-brakeKpDegPerCmPerSec × v_filtered,
+              ±brakeLimitDeg)       // uniquement sans commande utilisateur
+angle_target = slew(clamp(targetDeg + autoTrim + lean_applied + brake,
                           ±speedAbsoluteAngleLimitDeg),
                     speedTargetSlewRateDegPerSec)
 ```
@@ -549,31 +560,41 @@ angle_target = slew(clamp(targetDeg + correction,
 `driveRatio` exprime le nombre de tours moteur par tour de roue. L'EMA ne se
 met à jour que lorsque le numéro de séquence de la paire change. Le calcul de
 l'angle s'exécute à `speedLoopRateHz`, 50 Hz par défaut, sur le thread IMU ; il
-n'effectue aucune I/O. La correction est bornée autour du trim, puis la cible
-est limitée dans une enveloppe absolue et par un limiteur de pente. La condition
-de repos utilise `abs(v_filtered) < speedQuietThresholdCmPerSec` sur la moyenne
-filtrée des deux roues, pendant `speedQuietDurationMs` sans interruption. `Ki` apprend
-un auto-trim persistant avec anti-windup. Le checkpoint de repos est mémorisé
-au début d'un déplacement ; pendant le déplacement l'intégrateur reste libre.
-Lors du relâchement, la valeur intégrale de déplacement est transférée
-progressivement vers le checkpoint en proportion de la consigne vitesse
-effectivement rampée. Si `I_release` est la valeur avant le relâchement et
-`v_release` la consigne appliquée précédente, le transfert suit
-`I = I_rest + clamp(abs(v_applied) / abs(v_release), 0, 1) × (I_release - I_rest)`;
-aucune intégration n'est effectuée pendant ce transfert.
-La manœuvre active est définie par `abs(speedTargetCmPerSec) > ε` ou
-`abs(yawTargetDegPerSec) > ε`. Le checkpoint reste donc protégé pendant une
-translation comme pendant un yaw pur, tandis que l'intégrateur courant peut
-évoluer dans les deux cas. Lorsqu'une translation est relâchée, la valeur
-intégrale de déplacement est transférée vers le checkpoint comme décrit
-ci-dessus. Lorsqu'un yaw pur est relâché, aucun transfert n'est appliqué :
-l'intégrale courante est conservée dans l'état `YAW_SETTLING` jusqu'à ce que la
-vitesse moyenne filtrée, le gyro de tangage et le gyro Z restent faibles pendant
-la durée configurée ; l'état `SETTLED` reprend alors l'apprentissage du trim.
-Une paire périmée ne doit pas effacer
-l'intégrateur appris : la dernière cible est tenue brièvement puis revient
-progressivement vers le checkpoint. Une récupération fraîche réinitialise l'EMA
-à la mesure courante afin d'éviter un transitoire fondé sur une ancienne vitesse.
+n'effectue aucune I/O. La consigne joystick et la cible finale possèdent chacune
+leur limiteur de pente. La consigne utilisateur est active si
+`abs(speedTargetCmPerSec) > joystickDeadbandCmPerSec` ou si la consigne yaw
+dépasse sa bande morte.
+
+L'état est l'un de `DRIVING`, `WAIT_REST` ou `REST` :
+
+- `DRIVING` : translation, yaw seul, ou les deux ; `autoTrim` est figé et seul
+  le terme d'inclinaison utilisateur évolue ;
+- `WAIT_REST` : après relâchement de toutes les commandes, `autoTrim` reste figé
+  et le robot doit rester silencieux ;
+- `REST` : après `speedQuietDurationMs` continuellement satisfaites,
+  `autoTrim` apprend sur les nouvelles paires de télémétrie fraîches.
+
+La qualification de repos utilise la moyenne filtrée absolue
+`abs(v_filtered) < speedQuietThresholdCmPerSec`, un gyro de tangage inférieur à
+3 degrés/s, un gyro Z inférieur à 3 degrés/s et une consigne yaw nulle. Toute
+sortie de la plage remet le chronomètre à zéro. Une fois `REST` atteint, une
+dérive causée par une charge n'en sort pas : elle est précisément le signal
+servant à apprendre :
+
+```text
+autoTrim = clamp(autoTrim
+                 + speedIntegralGainDegPerCmPerSecSec × (-v_filtered) × dt,
+                 ±speedTargetAngleLimitDeg)
+```
+
+L'apprentissage ne s'effectue qu'une fois par nouvelle séquence de télémétrie,
+jamais sur une paire périmée. Une paire périmée conserve le dernier auto-trim
+et ne remet pas sa valeur à zéro ; le premier échantillon après récupération ne
+intègre pas l'intervalle perdu et réinitialise l'EMA sur la mesure courante.
+Au démarrage, l'état est `REST` pour permettre l'apprentissage initial avant la
+première commande utilisateur. Les paramètres historiques `speedKev...` et
+`speedTargetSlewRateCmPerSec` sont conservés uniquement pour compatibilité de
+configuration et ne participent plus au calcul.
 
 ### 8.5 Boucle de rotation différentielle
 
@@ -1174,12 +1195,15 @@ une phase distincte.
 
 - retour `PresentVelocity` rapide et paire gauche/droite séquencée ;
 - conversion signée en cm/s avec géométrie configurable ;
-- EMA et boucle `Kev` réglable à 50 Hz par défaut ;
-- gel de cible sur retour périmé et diagnostic de cadence/âge ;
+- EMA et transformation joystick → inclinaison à 50 Hz par défaut ;
+- états `DRIVING` / `WAIT_REST` / `REST` et auto-trim appris au repos ;
+- freinage proportionnel optionnel et limiteurs de pente ;
+- gel de l'auto-trim sur retour périmé et diagnostic de cadence/âge ;
 - réglages live Android/Web et export complet des intermédiaires CSV.
 
 Sortie : implémentation et tests logiciels terminés ; validation roues levées,
-puis essais au sol avec `Kev` progressif, à réaliser sur le robot.
+puis essais au sol avec une inclinaison joystick et un auto-trim progressifs,
+à réaliser sur le robot.
 
 ## 22. Fichiers de documentation produits pendant l'implémentation
 

@@ -1134,17 +1134,26 @@ private fun BalanceTuningCard(
             speedTargetCmPerSec = draft.speedTargetCmPerSec.coerceIn(-limit, limit),
         ))
     }
+    ParameterSlider("Inclinaison maximale joystick (°)", draft.joystickMaxLeanDeg, 0.5f..10f, 95, liveEditable) {
+        change(draft.copy(joystickMaxLeanDeg = it.toDouble()))
+    }
     ParameterSlider(
-        "Pente consigne vitesse (cm/s²)",
-        draft.speedTargetSlewRateCmPerSec,
-        1f..100f,
-        99,
+        "Pente inclinaison joystick (°/s)",
+        draft.joystickLeanSlewRateDegPerSec,
+        1f..180f,
+        179,
         liveEditable,
     ) {
-        change(draft.copy(speedTargetSlewRateCmPerSec = it.toDouble()))
+        change(draft.copy(joystickLeanSlewRateDegPerSec = it.toDouble()))
     }
-    ParameterSlider("Kev (° par cm/s)", draft.speedKevDegPerCmPerSec, 0f..2f, 199, liveEditable) {
-        change(draft.copy(speedKevDegPerCmPerSec = it.toDouble()))
+    ParameterSlider(
+        "Bande morte commande (cm/s)",
+        draft.joystickDeadbandCmPerSec,
+        0f..2f,
+        199,
+        liveEditable,
+    ) {
+        change(draft.copy(joystickDeadbandCmPerSec = it.toDouble()))
     }
     ParameterSlider("Fréquence boucle vitesse (Hz)", draft.speedLoopRateHz.toFloat(), 5f..100f, 94, liveEditable) {
         change(draft.copy(speedLoopRateHz = it.toInt()))
@@ -1152,7 +1161,7 @@ private fun BalanceTuningCard(
     ParameterSlider("Alpha filtre vitesse", draft.speedFilterAlpha, 0.01f..1f, 98, liveEditable) {
         change(draft.copy(speedFilterAlpha = it.toDouble()))
     }
-    ParameterSlider("Limite correction autour du trim (°)", draft.speedTargetAngleLimitDeg, 1f..15f, 139, liveEditable) {
+    ParameterSlider("Limite auto-trim (°)", draft.speedTargetAngleLimitDeg, 1f..15f, 139, liveEditable) {
         val limit = it.toDouble()
         change(draft.copy(
             speedTargetAngleLimitDeg = limit,
@@ -1172,8 +1181,20 @@ private fun BalanceTuningCard(
             targetDeg = if (draft.speedLoopEnabled) draft.targetDeg.coerceIn(-limit, limit) else draft.targetDeg,
         ))
     }
-    ParameterSlider("Pente cible maximale (°/s)", draft.speedTargetSlewRateDegPerSec, 1f..180f, 179, liveEditable) {
+    ParameterSlider("Pente cible de sécurité (°/s)", draft.speedTargetSlewRateDegPerSec, 1f..180f, 179, liveEditable) {
         change(draft.copy(speedTargetSlewRateDegPerSec = it.toDouble()))
+    }
+    ParameterSlider(
+        "Kp freinage (° par cm/s)",
+        draft.brakeKpDegPerCmPerSec,
+        0f..2f,
+        199,
+        liveEditable,
+    ) {
+        change(draft.copy(brakeKpDegPerCmPerSec = it.toDouble()))
+    }
+    ParameterSlider("Limite freinage (°)", draft.brakeLimitDeg, 0f..10f, 100, liveEditable) {
+        change(draft.copy(brakeLimitDeg = it.toDouble()))
     }
     ParameterSlider("Timeout retour vitesse (ms)", draft.speedFeedbackTimeoutMs.toFloat(), 40f..500f, 91, liveEditable) {
         change(draft.copy(speedFeedbackTimeoutMs = it.toLong()))
@@ -1291,12 +1312,10 @@ private fun BalanceTuningCard(
         "Boucle ${number(speedLoop.loopRateHz)} Hz · retour ${number(speedLoop.feedbackRateHz)} Hz · " +
             "erreur ${number(speedLoop.errorCmPerSec)} cm/s · correction ${number(speedLoop.correctionDeg)}° · " +
             "cible PD ${number(speedLoop.effectiveTargetDeg)}° · auto-trim ${speedLoop.autoTrimState}" +
-            (if (speedLoop.autoTrimState == "BRAKING") {
-                " (${number(speedLoop.restTrimDeg)}° mémorisés)"
-            } else if (speedLoop.autoTrimState == "YAW_SETTLING") {
-                " (${number(speedLoop.settledDurationSec)} s après yaw)"
-            } else if (speedLoop.autoTrimState == "SETTLED") {
-                " (${number(speedLoop.settledDurationSec)} s silencieux)"
+            (if (speedLoop.autoTrimState == "WAIT_REST") {
+                " (${number(speedLoop.settledDurationSec)} s de qualification)"
+            } else if (speedLoop.autoTrimState == "REST") {
+                " (${number(speedLoop.autoTrimDeg)}° appris)"
             } else "") +
             (if (!speedLoop.enabled) " · DÉSACTIVÉE" else if (speedLoop.stale) {
                 " · RETOUR PÉRIMÉ (cible gelée)"

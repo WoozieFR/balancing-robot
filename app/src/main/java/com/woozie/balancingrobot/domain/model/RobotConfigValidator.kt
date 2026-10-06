@@ -40,6 +40,23 @@ object RobotConfigValidator {
             ) {
                 error("speedTargetCmPerSec", "must be within the configured speed target limit")
             }
+            if (!config.joystickMaxLeanDeg.isFinite() || config.joystickMaxLeanDeg !in 0.5..15.0) {
+                error("joystickMaxLeanDeg", "must be finite and in [0.5, 15] degrees")
+            }
+            if (!config.joystickLeanSlewRateDegPerSec.isFinite() ||
+                config.joystickLeanSlewRateDegPerSec !in 1.0..180.0
+            ) {
+                error("joystickLeanSlewRateDegPerSec", "must be finite and in [1, 180] degrees/s")
+            }
+            if (!config.joystickDeadbandCmPerSec.isFinite() || config.joystickDeadbandCmPerSec !in 0.0..2.0) {
+                error("joystickDeadbandCmPerSec", "must be finite and in [0, 2] cm/s")
+            }
+            if (!config.brakeKpDegPerCmPerSec.isFinite() || config.brakeKpDegPerCmPerSec !in 0.0..2.0) {
+                error("brakeKpDegPerCmPerSec", "must be finite and in [0, 2] deg/(cm/s)")
+            }
+            if (!config.brakeLimitDeg.isFinite() || config.brakeLimitDeg !in 0.0..10.0) {
+                error("brakeLimitDeg", "must be finite and in [0, 10] degrees")
+            }
             if (!config.speedTargetSlewRateCmPerSec.isFinite() ||
                 config.speedTargetSlewRateCmPerSec !in 1.0..100.0
             ) {

@@ -1228,6 +1228,11 @@ class RobotControlService : Service() {
                     restTrimDeg = output.restTrimDeg,
                     settledDurationSec = output.settledDurationSec,
                     quiet = output.quiet,
+                    autoTrimDeg = output.autoTrimDeg,
+                    requestedLeanDeg = output.requestedLeanDeg,
+                    appliedLeanDeg = output.appliedLeanDeg,
+                    brakeCorrectionDeg = output.brakeCorrectionDeg,
+                    userCommandActive = output.userCommandActive,
                     saturated = output.saturated,
                     slewLimited = output.slewLimited,
                 ))
@@ -1297,6 +1302,13 @@ class RobotControlService : Service() {
                 speedErrorCmPerSec = speedOutput?.errorCmPerSec,
                 speedCorrectionDeg = speedOutput?.correctionDeg,
                 speedIntegralCorrectionDeg = speedOutput?.integralCorrectionDeg,
+                speedAutoTrimDeg = speedOutput?.autoTrimDeg,
+                speedRequestedLeanDeg = speedOutput?.requestedLeanDeg,
+                speedAppliedLeanDeg = speedOutput?.appliedLeanDeg,
+                speedBrakeCorrectionDeg = speedOutput?.brakeCorrectionDeg,
+                speedAutoTrimState = speedOutput?.autoTrimState,
+                speedSettledDurationSec = speedOutput?.settledDurationSec,
+                speedQuiet = speedOutput?.quiet,
                 speedTargetSlewLimited = speedOutput?.slewLimited,
                 speedStale = speedOutput?.stale,
                 speedTargetSaturated = speedOutput?.saturated,
@@ -1388,6 +1400,11 @@ class RobotControlService : Service() {
             put("speedLoopEnabled", config.speedLoopEnabled)
             put("speedTargetCmPerSec", config.speedTargetCmPerSec)
             put("speedTargetLimitCmPerSec", config.speedTargetLimitCmPerSec)
+            put("joystickMaxLeanDeg", config.joystickMaxLeanDeg)
+            put("joystickLeanSlewRateDegPerSec", config.joystickLeanSlewRateDegPerSec)
+            put("joystickDeadbandCmPerSec", config.joystickDeadbandCmPerSec)
+            put("brakeKpDegPerCmPerSec", config.brakeKpDegPerCmPerSec)
+            put("brakeLimitDeg", config.brakeLimitDeg)
             put("speedTargetSlewRateCmPerSec", config.speedTargetSlewRateCmPerSec)
             put("speedKevDegPerCmPerSec", config.speedKevDegPerCmPerSec)
             put("speedLoopRateHz", config.speedLoopRateHz)
@@ -1423,6 +1440,11 @@ class RobotControlService : Service() {
             put("speedRestTrimDeg", speed.restTrimDeg)
             put("speedSettledDurationSec", speed.settledDurationSec)
             put("speedQuiet", speed.quiet)
+            put("speedAutoTrimDeg", speed.autoTrimDeg)
+            put("speedRequestedLeanDeg", speed.requestedLeanDeg)
+            put("speedAppliedLeanDeg", speed.appliedLeanDeg)
+            put("speedBrakeCorrectionDeg", speed.brakeCorrectionDeg)
+            put("speedUserCommandActive", speed.userCommandActive)
             put("speedEffectiveTargetDeg", speed.effectiveTargetDeg)
             put("speedTargetSaturated", speed.saturated)
             put("speedTargetSlewLimited", speed.slewLimited)
@@ -1532,6 +1554,16 @@ class RobotControlService : Service() {
                         ?: _state.value.config.speedTargetCmPerSec,
                     speedTargetLimitCmPerSec = WebProtocol.payloadDouble(command, "speedTargetLimitCmPerSec")
                         ?: _state.value.config.speedTargetLimitCmPerSec,
+                    joystickMaxLeanDeg = WebProtocol.payloadDouble(command, "joystickMaxLeanDeg")
+                        ?: _state.value.config.joystickMaxLeanDeg,
+                    joystickLeanSlewRateDegPerSec = WebProtocol.payloadDouble(command, "joystickLeanSlewRateDegPerSec")
+                        ?: _state.value.config.joystickLeanSlewRateDegPerSec,
+                    joystickDeadbandCmPerSec = WebProtocol.payloadDouble(command, "joystickDeadbandCmPerSec")
+                        ?: _state.value.config.joystickDeadbandCmPerSec,
+                    brakeKpDegPerCmPerSec = WebProtocol.payloadDouble(command, "brakeKpDegPerCmPerSec")
+                        ?: _state.value.config.brakeKpDegPerCmPerSec,
+                    brakeLimitDeg = WebProtocol.payloadDouble(command, "brakeLimitDeg")
+                        ?: _state.value.config.brakeLimitDeg,
                     speedTargetSlewRateCmPerSec = WebProtocol.payloadDouble(command, "speedTargetSlewRateCmPerSec")
                         ?: _state.value.config.speedTargetSlewRateCmPerSec,
                     speedKevDegPerCmPerSec = WebProtocol.payloadDouble(command, "speedKevDegPerCmPerSec")

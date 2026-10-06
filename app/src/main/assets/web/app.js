@@ -138,19 +138,17 @@ const renderDiagnostics = (diagnostics) => {
   text('speed-feedback-state', !diagnostics.speedLoopEnabled
     ? 'Boucle désactivée'
       : diagnostics.speedFeedbackStale
-        ? `Retour périmé · retour progressif vers le trim · âge ${number(diagnostics.speedFeedbackAgeMs, ' ms')}`
+        ? `Retour périmé · auto-trim conservé · âge ${number(diagnostics.speedFeedbackAgeMs, ' ms')}`
       : `Retour frais · ${number(diagnostics.speedFeedbackRateHz, ' Hz')}${diagnostics.speedCommandSlewLimited ? ' · rampe consigne active' : ''}`);
   text('speed-applied-target', number(diagnostics.speedAppliedTargetCmPerSec, ' cm/s'));
   text('speed-effective-target', number(diagnostics.speedEffectiveTargetDeg, '°'));
   text('speed-correction', number(diagnostics.speedCorrectionDeg, '°'));
   text('speed-integral', number(diagnostics.speedIntegralCorrectionDeg, '°'));
   const autoTrimState = diagnostics.speedAutoTrimState || '—';
-  const autoTrimDetail = autoTrimState === 'BRAKING'
-    ? ` · checkpoint ${number(diagnostics.speedRestTrimDeg, '°')}`
-    : autoTrimState === 'YAW_SETTLING'
-      ? ` · stabilisation yaw ${number(diagnostics.speedSettledDurationSec, ' s')}`
-    : autoTrimState === 'SETTLED'
-      ? ` · silence ${number(diagnostics.speedSettledDurationSec, ' s')}`
+  const autoTrimDetail = autoTrimState === 'WAIT_REST'
+    ? ` · qualification ${number(diagnostics.speedSettledDurationSec, ' s')}`
+    : autoTrimState === 'REST'
+      ? ` · apprentissage ${number(diagnostics.speedAutoTrimDeg, '°')}`
       : '';
   const speedFeedback = $('speed-feedback-state');
   if (speedFeedback && diagnostics.speedLoopEnabled && !diagnostics.speedFeedbackStale) {
@@ -202,14 +200,17 @@ const renderDiagnostics = (diagnostics) => {
   }
   [['alpha', diagnostics.alpha], ['target', diagnostics.targetDeg], ['kp', diagnostics.kp], ['kd', diagnostics.kd],
     ['speed-target-limit', diagnostics.speedTargetLimitCmPerSec], ['speed-target', diagnostics.speedTargetCmPerSec],
-    ['speed-target-rate', diagnostics.speedTargetSlewRateCmPerSec],
-    ['speed-kev', diagnostics.speedKevDegPerCmPerSec], ['speed-loop-rate', diagnostics.speedLoopRateHz],
+    ['joystick-max-lean', diagnostics.joystickMaxLeanDeg],
+    ['joystick-lean-slew', diagnostics.joystickLeanSlewRateDegPerSec],
+    ['joystick-deadband', diagnostics.joystickDeadbandCmPerSec],
+    ['speed-loop-rate', diagnostics.speedLoopRateHz],
     ['speed-filter-alpha', diagnostics.speedFilterAlpha], ['speed-angle-limit', diagnostics.speedTargetAngleLimitDeg],
     ['speed-integral-gain', diagnostics.speedIntegralGainDegPerCmPerSecSec],
     ['speed-quiet-threshold', diagnostics.speedQuietThresholdCmPerSec],
     ['speed-quiet-duration', diagnostics.speedQuietDurationMs],
     ['speed-absolute-angle-limit', diagnostics.speedAbsoluteAngleLimitDeg],
     ['speed-target-slew', diagnostics.speedTargetSlewRateDegPerSec],
+    ['brake-kp', diagnostics.brakeKpDegPerCmPerSec], ['brake-limit', diagnostics.brakeLimitDeg],
     ['speed-feedback-timeout', diagnostics.speedFeedbackTimeoutMs],
     ['yaw-target', diagnostics.yawTargetDegPerSec], ['yaw-kp', diagnostics.yawKpCommandPerDegPerSec],
     ['wheel-diameter', diagnostics.wheelDiameterMm],
@@ -259,8 +260,9 @@ const parameterKeyById = {
   'speed-loop-enabled': 'speedLoopEnabled',
   'speed-target': 'speedTargetCmPerSec',
   'speed-target-limit': 'speedTargetLimitCmPerSec',
-  'speed-target-rate': 'speedTargetSlewRateCmPerSec',
-  'speed-kev': 'speedKevDegPerCmPerSec',
+  'joystick-max-lean': 'joystickMaxLeanDeg',
+  'joystick-lean-slew': 'joystickLeanSlewRateDegPerSec',
+  'joystick-deadband': 'joystickDeadbandCmPerSec',
   'speed-loop-rate': 'speedLoopRateHz',
   'speed-filter-alpha': 'speedFilterAlpha',
   'speed-angle-limit': 'speedTargetAngleLimitDeg',
@@ -269,6 +271,8 @@ const parameterKeyById = {
   'speed-quiet-duration': 'speedQuietDurationMs',
   'speed-absolute-angle-limit': 'speedAbsoluteAngleLimitDeg',
   'speed-target-slew': 'speedTargetSlewRateDegPerSec',
+  'brake-kp': 'brakeKpDegPerCmPerSec',
+  'brake-limit': 'brakeLimitDeg',
   'speed-feedback-timeout': 'speedFeedbackTimeoutMs',
   'yaw-target': 'yawTargetDegPerSec',
   'yaw-kp': 'yawKpCommandPerDegPerSec',
@@ -367,7 +371,7 @@ const attachPrecisionInput = (range) => {
   editor.addEventListener('change', applyEditor);
 };
 
-const parameterIds = ['alpha', 'target', 'kp', 'kd', 'speed-target', 'speed-target-limit', 'speed-kev', 'speed-loop-rate', 'speed-filter-alpha', 'speed-angle-limit', 'speed-integral-gain', 'speed-quiet-threshold', 'speed-quiet-duration', 'speed-absolute-angle-limit', 'speed-target-slew', 'speed-feedback-timeout', 'yaw-target', 'yaw-kp', 'zero-offset', 'vmax', 'pwm-max', 'torque-limit', 'imu-timeout', 'fall-angle', 'fall-duration', 'manual-timeout', 'wheel-diameter', 'drive-ratio'];
+const parameterIds = ['alpha', 'target', 'kp', 'kd', 'speed-target', 'speed-target-limit', 'joystick-max-lean', 'joystick-lean-slew', 'joystick-deadband', 'speed-loop-rate', 'speed-filter-alpha', 'speed-angle-limit', 'speed-integral-gain', 'speed-quiet-threshold', 'speed-quiet-duration', 'speed-absolute-angle-limit', 'speed-target-slew', 'brake-kp', 'brake-limit', 'speed-feedback-timeout', 'yaw-target', 'yaw-kp', 'zero-offset', 'vmax', 'pwm-max', 'torque-limit', 'imu-timeout', 'fall-angle', 'fall-duration', 'manual-timeout', 'wheel-diameter', 'drive-ratio'];
 parameterIds.forEach((id) => attachPrecisionInput($(id)));
 
 $('speed-loop-enabled').addEventListener('change', () => { markParameterPending('speed-loop-enabled', $('speed-loop-enabled').checked); clampTargetToAngleLimit(); scheduleParameterUpdate(); });
