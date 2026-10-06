@@ -1162,8 +1162,26 @@ private fun BalanceTuningCard(
             ) else draft.targetDeg,
         ))
     }
-    ParameterSlider("Ki auto-trim (° / (cm/s·s))", draft.speedIntegralGainDegPerCmPerSecSec, 0f..2f, 199, liveEditable) {
+    ParameterSlider("Ki vitesse (° / (cm/s·s))", draft.speedIntegralGainDegPerCmPerSecSec, 0f..2f, 199, liveEditable) {
         change(draft.copy(speedIntegralGainDegPerCmPerSecSec = it.toDouble()))
+    }
+    ParameterSlider(
+        "Ktrim repos (° / (cm/s·s))",
+        draft.speedAutoTrimGainDegPerCmPerSecSec,
+        0f..2f,
+        199,
+        liveEditable,
+    ) {
+        change(draft.copy(speedAutoTrimGainDegPerCmPerSecSec = it.toDouble()))
+    }
+    ParameterSlider(
+        "Retour de l'intégrale (°/s)",
+        draft.speedIntegralReleaseRateDegPerSec,
+        1f..180f,
+        179,
+        liveEditable,
+    ) {
+        change(draft.copy(speedIntegralReleaseRateDegPerSec = it.toDouble()))
     }
     ParameterSlider("Limite absolue cible (°)", draft.speedAbsoluteAngleLimitDeg, 5f..45f, 399, liveEditable) {
         val limit = it.toDouble()
@@ -1177,6 +1195,24 @@ private fun BalanceTuningCard(
     }
     ParameterSlider("Timeout retour vitesse (ms)", draft.speedFeedbackTimeoutMs.toFloat(), 40f..500f, 91, liveEditable) {
         change(draft.copy(speedFeedbackTimeoutMs = it.toLong()))
+    }
+    ParameterSlider(
+        "Seuil repos vitesse (cm/s)",
+        draft.speedQuietThresholdCmPerSec,
+        0.05f..20f,
+        199,
+        liveEditable,
+    ) {
+        change(draft.copy(speedQuietThresholdCmPerSec = it.toDouble()))
+    }
+    ParameterSlider(
+        "Durée repos (ms)",
+        draft.speedQuietDurationMs.toFloat(),
+        100f..5000f,
+        98,
+        liveEditable,
+    ) {
+        change(draft.copy(speedQuietDurationMs = it.toLong()))
     }
     ParameterSlider("Consigne rotation (°/s)", draft.yawTargetDegPerSec, -360f..360f, 143, liveEditable) {
         change(draft.copy(yawTargetDegPerSec = it.toDouble()))

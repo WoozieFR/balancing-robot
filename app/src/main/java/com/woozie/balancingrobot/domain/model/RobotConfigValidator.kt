@@ -66,6 +66,16 @@ object RobotConfigValidator {
             ) {
                 error("speedIntegralGainDegPerCmPerSecSec", "must be finite and in [0, 2]")
             }
+            if (!config.speedAutoTrimGainDegPerCmPerSecSec.isFinite() ||
+                config.speedAutoTrimGainDegPerCmPerSecSec !in 0.0..2.0
+            ) {
+                error("speedAutoTrimGainDegPerCmPerSecSec", "must be finite and in [0, 2]")
+            }
+            if (!config.speedIntegralReleaseRateDegPerSec.isFinite() ||
+                config.speedIntegralReleaseRateDegPerSec !in 0.1..180.0
+            ) {
+                error("speedIntegralReleaseRateDegPerSec", "must be finite and in [0.1, 180]")
+            }
             if (!config.speedAbsoluteAngleLimitDeg.isFinite() ||
                 config.speedAbsoluteAngleLimitDeg !in 5.0..45.0
             ) {
@@ -78,6 +88,14 @@ object RobotConfigValidator {
             }
             if (config.speedFeedbackTimeoutMs !in 40..500) {
                 error("speedFeedbackTimeoutMs", "must be in [40, 500] ms")
+            }
+            if (!config.speedQuietThresholdCmPerSec.isFinite() ||
+                config.speedQuietThresholdCmPerSec !in 0.05..20.0
+            ) {
+                error("speedQuietThresholdCmPerSec", "must be finite and in [0.05, 20]")
+            }
+            if (config.speedQuietDurationMs !in 100..5_000) {
+                error("speedQuietDurationMs", "must be in [100, 5000] ms")
             }
             if (!config.yawTargetDegPerSec.isFinite() || config.yawTargetDegPerSec !in -360.0..360.0) {
                 error("yawTargetDegPerSec", "must be finite and in [-360, 360] deg/s")

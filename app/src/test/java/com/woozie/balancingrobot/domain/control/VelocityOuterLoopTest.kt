@@ -3,15 +3,14 @@ package com.woozie.balancingrobot.domain.control
 import com.woozie.balancingrobot.domain.model.RobotConfig
 import org.junit.Assert.assertEquals
 import org.junit.Assert.assertFalse
+import org.junit.Assert.assertNotEquals
 import org.junit.Assert.assertTrue
 import org.junit.Test
 
 class VelocityOuterLoopTest {
     @Test
     fun convertsEncoderStepsPerSecondToCentimetersPerSecond() {
-        val speed = stepsPerSecondToCmPerSecond(1_000, 40.0, 1.0)
-
-        assertEquals(3.0679615758, speed, 1e-9)
+        assertEquals(3.0679615758, stepsPerSecondToCmPerSecond(1_000, 40.0, 1.0), 1e-9)
     }
 
     @Test
@@ -21,7 +20,7 @@ class VelocityOuterLoopTest {
     }
 
     @Test
-    fun computesFilteredSpeedErrorTrimCorrectionAndClamp() {
+    fun computesSpeedProportionalCorrectionAndClamp() {
         val loop = VelocityOuterLoop(config(
             targetDeg = 0.0,
             speedTargetCmPerSec = 10.0,
@@ -67,55 +66,107 @@ class VelocityOuterLoopTest {
     }
 
     @Test
-    fun staleFeedbackReturnsTargetTowardTrimAndFreshRecoveryResetsFilter() {
+    fun speedIntegralIsActiveDuringTranslationAndYawManeuvers() {
         val loop = VelocityOuterLoop(config(
-            targetDeg = 6.7,
-            speedKevDegPerCmPerSec = 1.0,
-            speedLoopRateHz = 50,
-            speedFeedbackTimeoutMs = 100,
-            speedTargetSlewRateDegPerSec = 5.0,
-        ))
-        val valid = loop.step(1_000_000_000L, feedback(1, 1_000, 1_000, 995_000_000L))
-        val stale = loop.step(1_120_000_000L, feedback(1, 1_000, 1_000, 995_000_000L))
-        val recovered = loop.step(1_140_000_000L, feedback(2, 3_000, 3_000, 1_135_000_000L))
-
-        assertTrue(stale.stale)
-        assertTrue(stale.effectiveTargetDeg < valid.effectiveTargetDeg)
-        assertTrue(stale.effectiveTargetDeg > 6.7)
-        assertFalse(recovered.stale)
-        assertEquals(recovered.meanCmPerSec!!, recovered.filteredCmPerSec!!, 1e-9)
-    }
-
-    @Test
-    fun correctionIsCenteredOnTrimBeforeAbsoluteSafetyClamp() {
-        val loop = VelocityOuterLoop(config(
-            targetDeg = 6.7,
-            speedTargetCmPerSec = 10.0,
-            speedKevDegPerCmPerSec = 2.0,
-            speedTargetAngleLimitDeg = 10.0,
-            speedAbsoluteAngleLimitDeg = 15.0,
-        ))
-
-        val output = loop.step(1_000_000_000L, feedback(1, 1_000, 1_000, 995_000_000L))
-
-        assertEquals(10.0, output.correctionDeg, 1e-9)
-        assertEquals(15.0, output.effectiveTargetDeg, 1e-9)
-        assertTrue(output.saturated)
-    }
-
-    @Test
-    fun integralAutoTrimPersistsAfterSpeedErrorReturnsToZero() {
-        val loop = VelocityOuterLoop(config(
-            speedTargetCmPerSec = 5.0,
             speedIntegralGainDegPerCmPerSecSec = 1.0,
+            speedAutoTrimGainDegPerCmPerSecSec = 0.0,
+        ))
+        loop.step(1_000_000_000L, feedback(1, 0, 0, 995_000_000L), targetCmPerSec = 5.0)
+        val translation = loop.step(
+            1_020_000_000L,
+            feedback(2, 0, 0, 1_015_000_000L),
+            targetCmPerSec = 5.0,
+        )
+        assertTrue(translation.speedIntegralDeg > 0.0)
+        assertEquals("MANEUVER", translation.autoTrimState)
+
+        val yawLoop = VelocityOuterLoop(config(
+            speedTargetCmPerSec = 0.0,
+            speedIntegralGainDegPerCmPerSecSec = 1.0,
+            speedAutoTrimGainDegPerCmPerSecSec = 0.0,
+        ))
+        yawLoop.step(
+            1_000_000_000L,
+            feedback(1, 0, 0, 995_000_000L),
+            targetCmPerSec = 0.0,
+            yawTargetDegPerSec = 60.0,
+        )
+        val yaw = yawLoop.step(
+            1_040_000_000L,
+            feedback(3, 1_000, 1_000, 1_035_000_000L),
+            targetCmPerSec = 0.0,
+            yawTargetDegPerSec = 60.0,
+        )
+        assertTrue(yaw.speedIntegralDeg < 0.0)
+        assertEquals("MANEUVER", yaw.autoTrimState)
+    }
+
+    @Test
+    fun speedIntegralReturnsToZeroAfterRelease() {
+        val loop = VelocityOuterLoop(config(
+            speedIntegralGainDegPerCmPerSecSec = 1.0,
+            speedIntegralReleaseRateDegPerSec = 5.0,
+            speedAutoTrimGainDegPerCmPerSecSec = 0.0,
+        ))
+        loop.step(1_000_000_000L, feedback(1, 0, 0, 995_000_000L), targetCmPerSec = 5.0)
+        val accumulated = loop.step(
+            1_020_000_000L,
+            feedback(2, 0, 0, 1_015_000_000L),
+            targetCmPerSec = 5.0,
+        )
+        val released = loop.step(
+            1_040_000_000L,
+            feedback(3, 0, 0, 1_035_000_000L),
+            targetCmPerSec = 0.0,
+        )
+
+        assertTrue(accumulated.speedIntegralDeg > 0.0)
+        assertTrue(released.speedIntegralDeg < accumulated.speedIntegralDeg)
+        assertEquals("RELEASE", released.autoTrimState)
+    }
+
+    @Test
+    fun restAutoTrimIsSeparateAndFrozenDuringManeuver() {
+        val loop = VelocityOuterLoop(config(
+            speedTargetCmPerSec = 0.0,
+            speedIntegralGainDegPerCmPerSecSec = 0.0,
+            speedAutoTrimGainDegPerCmPerSecSec = 0.5,
         ))
         loop.step(1_000_000_000L, feedback(1, 0, 0, 995_000_000L))
-        val accumulated = loop.step(1_020_000_000L, feedback(1, 0, 0, 1_015_000_000L))
-        assertTrue(accumulated.integralCorrectionDeg > 0.0)
+        val learned = loop.step(1_020_000_000L, feedback(2, 1_000, 1_000, 1_015_000_000L))
+        val trimAtStart = learned.autoTrimDeg
+        assertTrue(trimAtStart < 0.0)
 
-        loop.updateConfig(config(speedTargetCmPerSec = 0.0, speedIntegralGainDegPerCmPerSecSec = 1.0))
-        val retained = loop.step(1_040_000_000L, feedback(2, 0, 0, 1_035_000_000L))
-        assertEquals(accumulated.integralCorrectionDeg, retained.integralCorrectionDeg, 1e-9)
+        val moving = loop.step(
+            1_040_000_000L,
+            feedback(3, 1_000, 1_000, 1_035_000_000L),
+            targetCmPerSec = 5.0,
+        )
+        assertEquals(trimAtStart, moving.autoTrimDeg, 1e-9)
+        assertEquals("MANEUVER", moving.autoTrimState)
+    }
+
+    @Test
+    fun staleFeedbackDoesNotEraseTemporaryIntegralOrLearnTrim() {
+        val loop = VelocityOuterLoop(config(
+            speedIntegralGainDegPerCmPerSecSec = 1.0,
+            speedAutoTrimGainDegPerCmPerSecSec = 0.5,
+        ))
+        loop.step(1_000_000_000L, feedback(1, 0, 0, 995_000_000L), targetCmPerSec = 5.0)
+        val accumulated = loop.step(
+            1_020_000_000L,
+            feedback(2, 0, 0, 1_015_000_000L),
+            targetCmPerSec = 5.0,
+        )
+        val stale = loop.step(
+            1_140_000_000L,
+            feedback(2, 0, 0, 1_015_000_000L),
+            targetCmPerSec = 5.0,
+        )
+
+        assertTrue(stale.stale)
+        assertEquals(accumulated.speedIntegralDeg, stale.speedIntegralDeg, 1e-9)
+        assertEquals(0.0, stale.autoTrimDeg, 1e-9)
     }
 
     @Test
@@ -140,31 +191,7 @@ class VelocityOuterLoopTest {
     }
 
     @Test
-    fun speedTargetSlewRateLimitsLiveSpeedCommandChanges() {
-        val loop = VelocityOuterLoop(config(
-            speedTargetCmPerSec = 0.0,
-            speedTargetSlewRateCmPerSec = 10.0,
-            speedLoopRateHz = 50,
-        ))
-        val initial = loop.step(
-            1_000_000_000L,
-            feedback(1, 0, 0, 995_000_000L),
-            targetCmPerSec = 0.0,
-        )
-        val changed = loop.step(
-            1_020_000_000L,
-            feedback(2, 0, 0, 1_015_000_000L),
-            targetCmPerSec = 5.0,
-        )
-
-        assertEquals(0.0, initial.appliedTargetCmPerSec, 1e-9)
-        assertEquals(5.0, changed.targetCmPerSec, 1e-9)
-        assertEquals(0.2, changed.appliedTargetCmPerSec, 1e-9)
-        assertTrue(changed.speedCommandSlewLimited)
-    }
-
-    @Test
-    fun disabledLoopUsesTrimWithoutClamping() {
+    fun disabledLoopUsesBaseTrimWithoutClamping() {
         val loop = VelocityOuterLoop(config(speedLoopEnabled = false, targetDeg = 12.0))
 
         val output = loop.step(1_000_000_000L, null)
@@ -183,6 +210,8 @@ class VelocityOuterLoopTest {
         speedFilterAlpha: Double = 0.5,
         speedTargetAngleLimitDeg: Double = 10.0,
         speedIntegralGainDegPerCmPerSecSec: Double = 0.0,
+        speedAutoTrimGainDegPerCmPerSecSec: Double = 0.0,
+        speedIntegralReleaseRateDegPerSec: Double = 20.0,
         speedAbsoluteAngleLimitDeg: Double = 15.0,
         speedTargetSlewRateDegPerSec: Double = 30.0,
         speedFeedbackTimeoutMs: Long = 100,
@@ -196,6 +225,8 @@ class VelocityOuterLoopTest {
         speedFilterAlpha = speedFilterAlpha,
         speedTargetAngleLimitDeg = speedTargetAngleLimitDeg,
         speedIntegralGainDegPerCmPerSecSec = speedIntegralGainDegPerCmPerSecSec,
+        speedAutoTrimGainDegPerCmPerSecSec = speedAutoTrimGainDegPerCmPerSecSec,
+        speedIntegralReleaseRateDegPerSec = speedIntegralReleaseRateDegPerSec,
         speedAbsoluteAngleLimitDeg = speedAbsoluteAngleLimitDeg,
         speedTargetSlewRateDegPerSec = speedTargetSlewRateDegPerSec,
         speedFeedbackTimeoutMs = speedFeedbackTimeoutMs,

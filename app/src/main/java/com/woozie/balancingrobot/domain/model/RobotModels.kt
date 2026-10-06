@@ -91,13 +91,21 @@ data class RobotConfig(
     val speedLoopRateHz: Int = 50,
     val speedFilterAlpha: Double = 0.5,
     val speedTargetAngleLimitDeg: Double = 10.0,
-    /** Maximum velocity-loop correction around targetDeg (the trim). */
+    /** Temporary velocity-loop integral gain, active only during a maneuver. */
     val speedIntegralGainDegPerCmPerSecSec: Double = 0.0,
+    /** Rest auto-trim gain, active only after the robot has settled. */
+    val speedAutoTrimGainDegPerCmPerSecSec: Double = 0.0,
+    /** Rate at which the temporary speed integral returns to zero after release. */
+    val speedIntegralReleaseRateDegPerSec: Double = 20.0,
     /** Absolute target-angle safety envelope applied after trim + correction. */
     val speedAbsoluteAngleLimitDeg: Double = 15.0,
     /** Maximum target-angle movement per second. */
     val speedTargetSlewRateDegPerSec: Double = 30.0,
     val speedFeedbackTimeoutMs: Long = 100,
+    /** Mean-wheel-speed threshold used to qualify a real rest state. */
+    val speedQuietThresholdCmPerSec: Double = 0.5,
+    /** Required continuous quiet duration before entering REST. */
+    val speedQuietDurationMs: Long = 700,
     /** Desired yaw rate. Zero explicitly disables the yaw correction loop. */
     val yawTargetDegPerSec: Double = 0.0,
     /** Proportional yaw gain in motor-command units per deg/s. */

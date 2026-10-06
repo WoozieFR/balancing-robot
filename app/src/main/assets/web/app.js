@@ -144,6 +144,8 @@ const renderDiagnostics = (diagnostics) => {
   text('speed-effective-target', number(diagnostics.speedEffectiveTargetDeg, '°'));
   text('speed-correction', number(diagnostics.speedCorrectionDeg, '°'));
   text('speed-integral', number(diagnostics.speedIntegralCorrectionDeg, '°'));
+  text('speed-auto-trim', number(diagnostics.speedAutoTrimDeg, '°'));
+  text('speed-motion-state', `${diagnostics.speedAutoTrimState || '—'}${diagnostics.speedQuiet ? ' · calme' : ''}`);
   const yawTarget = Number(diagnostics.yawTargetDegPerSec || 0);
   text('yaw-feedback-state', yawTarget === 0
     ? 'inactive · consigne 0'
@@ -194,9 +196,13 @@ const renderDiagnostics = (diagnostics) => {
     ['speed-kev', diagnostics.speedKevDegPerCmPerSec], ['speed-loop-rate', diagnostics.speedLoopRateHz],
     ['speed-filter-alpha', diagnostics.speedFilterAlpha], ['speed-angle-limit', diagnostics.speedTargetAngleLimitDeg],
     ['speed-integral-gain', diagnostics.speedIntegralGainDegPerCmPerSecSec],
+    ['speed-auto-trim-gain', diagnostics.speedAutoTrimGainDegPerCmPerSecSec],
+    ['speed-integral-release', diagnostics.speedIntegralReleaseRateDegPerSec],
     ['speed-absolute-angle-limit', diagnostics.speedAbsoluteAngleLimitDeg],
     ['speed-target-slew', diagnostics.speedTargetSlewRateDegPerSec],
     ['speed-feedback-timeout', diagnostics.speedFeedbackTimeoutMs],
+    ['speed-quiet-threshold', diagnostics.speedQuietThresholdCmPerSec],
+    ['speed-quiet-duration', diagnostics.speedQuietDurationMs],
     ['yaw-target', diagnostics.yawTargetDegPerSec], ['yaw-kp', diagnostics.yawKpCommandPerDegPerSec],
     ['wheel-diameter', diagnostics.wheelDiameterMm],
     ['drive-ratio', diagnostics.driveRatio], ['zero-offset', diagnostics.zeroOffsetDeg], ['vmax', diagnostics.vmax],
@@ -251,9 +257,13 @@ const parameterKeyById = {
   'speed-filter-alpha': 'speedFilterAlpha',
   'speed-angle-limit': 'speedTargetAngleLimitDeg',
   'speed-integral-gain': 'speedIntegralGainDegPerCmPerSecSec',
+  'speed-auto-trim-gain': 'speedAutoTrimGainDegPerCmPerSecSec',
+  'speed-integral-release': 'speedIntegralReleaseRateDegPerSec',
   'speed-absolute-angle-limit': 'speedAbsoluteAngleLimitDeg',
   'speed-target-slew': 'speedTargetSlewRateDegPerSec',
   'speed-feedback-timeout': 'speedFeedbackTimeoutMs',
+  'speed-quiet-threshold': 'speedQuietThresholdCmPerSec',
+  'speed-quiet-duration': 'speedQuietDurationMs',
   'yaw-target': 'yawTargetDegPerSec',
   'yaw-kp': 'yawKpCommandPerDegPerSec',
   'zero-offset': 'zeroOffsetDeg',
@@ -351,7 +361,7 @@ const attachPrecisionInput = (range) => {
   editor.addEventListener('change', applyEditor);
 };
 
-const parameterIds = ['alpha', 'target', 'kp', 'kd', 'speed-target', 'speed-target-limit', 'speed-kev', 'speed-loop-rate', 'speed-filter-alpha', 'speed-angle-limit', 'speed-integral-gain', 'speed-absolute-angle-limit', 'speed-target-slew', 'speed-feedback-timeout', 'yaw-target', 'yaw-kp', 'zero-offset', 'vmax', 'pwm-max', 'torque-limit', 'imu-timeout', 'fall-angle', 'fall-duration', 'manual-timeout', 'wheel-diameter', 'drive-ratio'];
+const parameterIds = ['alpha', 'target', 'kp', 'kd', 'speed-target', 'speed-target-limit', 'speed-kev', 'speed-loop-rate', 'speed-filter-alpha', 'speed-angle-limit', 'speed-integral-gain', 'speed-auto-trim-gain', 'speed-integral-release', 'speed-absolute-angle-limit', 'speed-target-slew', 'speed-feedback-timeout', 'speed-quiet-threshold', 'speed-quiet-duration', 'yaw-target', 'yaw-kp', 'zero-offset', 'vmax', 'pwm-max', 'torque-limit', 'imu-timeout', 'fall-angle', 'fall-duration', 'manual-timeout', 'wheel-diameter', 'drive-ratio'];
 parameterIds.forEach((id) => attachPrecisionInput($(id)));
 
 $('speed-loop-enabled').addEventListener('change', () => { markParameterPending('speed-loop-enabled', $('speed-loop-enabled').checked); clampTargetToAngleLimit(); scheduleParameterUpdate(); });

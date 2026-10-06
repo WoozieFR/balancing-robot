@@ -43,9 +43,13 @@ object RobotSettings {
     private val speedFilterAlphaKey = doublePreferencesKey("speed_filter_alpha")
     private val speedTargetAngleLimitKey = doublePreferencesKey("speed_target_angle_limit_deg")
     private val speedIntegralGainKey = doublePreferencesKey("speed_integral_gain_deg_per_cmps_s")
+    private val speedAutoTrimGainKey = doublePreferencesKey("speed_auto_trim_gain_deg_per_cmps_s")
+    private val speedIntegralReleaseRateKey = doublePreferencesKey("speed_integral_release_rate_deg_per_sec")
     private val speedAbsoluteAngleLimitKey = doublePreferencesKey("speed_absolute_angle_limit_deg")
     private val speedTargetSlewRateKey = doublePreferencesKey("speed_target_slew_rate_deg_per_sec")
     private val speedFeedbackTimeoutKey = intPreferencesKey("speed_feedback_timeout_ms")
+    private val speedQuietThresholdKey = doublePreferencesKey("speed_quiet_threshold_cm_per_sec")
+    private val speedQuietDurationKey = intPreferencesKey("speed_quiet_duration_ms")
     private val yawTargetKey = doublePreferencesKey("yaw_target_deg_per_sec")
     private val yawKpKey = doublePreferencesKey("yaw_kp_command_per_deg_per_sec")
     private val wheelDiameterKey = doublePreferencesKey("wheel_diameter_mm")
@@ -176,12 +180,21 @@ object RobotSettings {
                 ?: defaults.speedTargetAngleLimitDeg,
             speedIntegralGainDegPerCmPerSecSec = preferences[speedIntegralGainKey]
                 ?: defaults.speedIntegralGainDegPerCmPerSecSec,
+            speedAutoTrimGainDegPerCmPerSecSec = preferences[speedAutoTrimGainKey]
+                ?: preferences[speedIntegralGainKey]
+                ?: defaults.speedAutoTrimGainDegPerCmPerSecSec,
+            speedIntegralReleaseRateDegPerSec = preferences[speedIntegralReleaseRateKey]
+                ?: defaults.speedIntegralReleaseRateDegPerSec,
             speedAbsoluteAngleLimitDeg = preferences[speedAbsoluteAngleLimitKey]
                 ?: defaults.speedAbsoluteAngleLimitDeg,
             speedTargetSlewRateDegPerSec = preferences[speedTargetSlewRateKey]
                 ?: defaults.speedTargetSlewRateDegPerSec,
             speedFeedbackTimeoutMs = (preferences[speedFeedbackTimeoutKey]
                 ?: defaults.speedFeedbackTimeoutMs.toInt()).toLong(),
+            speedQuietThresholdCmPerSec = preferences[speedQuietThresholdKey]
+                ?: defaults.speedQuietThresholdCmPerSec,
+            speedQuietDurationMs = (preferences[speedQuietDurationKey]
+                ?: defaults.speedQuietDurationMs.toInt()).toLong(),
             yawTargetDegPerSec = preferences[yawTargetKey] ?: defaults.yawTargetDegPerSec,
             yawKpCommandPerDegPerSec = preferences[yawKpKey] ?: defaults.yawKpCommandPerDegPerSec,
             wheelDiameterMm = preferences[wheelDiameterKey] ?: defaults.wheelDiameterMm,
@@ -223,9 +236,13 @@ object RobotSettings {
             preferences[speedFilterAlphaKey] = config.speedFilterAlpha
             preferences[speedTargetAngleLimitKey] = config.speedTargetAngleLimitDeg
             preferences[speedIntegralGainKey] = config.speedIntegralGainDegPerCmPerSecSec
+            preferences[speedAutoTrimGainKey] = config.speedAutoTrimGainDegPerCmPerSecSec
+            preferences[speedIntegralReleaseRateKey] = config.speedIntegralReleaseRateDegPerSec
             preferences[speedAbsoluteAngleLimitKey] = config.speedAbsoluteAngleLimitDeg
             preferences[speedTargetSlewRateKey] = config.speedTargetSlewRateDegPerSec
             preferences[speedFeedbackTimeoutKey] = config.speedFeedbackTimeoutMs.toInt()
+            preferences[speedQuietThresholdKey] = config.speedQuietThresholdCmPerSec
+            preferences[speedQuietDurationKey] = config.speedQuietDurationMs.toInt()
             preferences[yawTargetKey] = config.yawTargetDegPerSec
             preferences[yawKpKey] = config.yawKpCommandPerDegPerSec
             preferences[wheelDiameterKey] = config.wheelDiameterMm

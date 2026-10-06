@@ -80,7 +80,11 @@
             <label class="parameter-row">Pente consigne vitesse (cm/s²) <output id="speed-target-rate-value">20</output><input id="speed-target-rate" type="range" min="1" max="100" step="1" value="20"></label>
             <label class="parameter-row">Kev (° / cm/s) <output id="speed-kev-value">0</output><input id="speed-kev" type="range" min="0" max="2" step="0.001" value="0"></label>
             <label class="parameter-row">Cadence boucle (Hz) <output id="speed-loop-rate-value">50</output><input id="speed-loop-rate" type="range" min="5" max="100" step="1" value="50"></label>
-            <label class="parameter-row">Ki auto-trim (° / (cm/s·s)) <output id="speed-integral-gain-value">0</output><input id="speed-integral-gain" type="range" min="0" max="2" step="0.001" value="0"></label>
+            <label class="parameter-row">Ki vitesse (° / (cm/s·s)) <output id="speed-integral-gain-value">0</output><input id="speed-integral-gain" type="range" min="0" max="2" step="0.001" value="0"></label>
+            <label class="parameter-row">Ktrim repos (° / (cm/s·s)) <output id="speed-auto-trim-gain-value">0</output><input id="speed-auto-trim-gain" type="range" min="0" max="2" step="0.001" value="0"></label>
+            <label class="parameter-row">Retour intégrale (°/s) <output id="speed-integral-release-value">20</output><input id="speed-integral-release" type="range" min="1" max="180" step="1" value="20"></label>
+            <label class="parameter-row">Seuil repos (cm/s) <output id="speed-quiet-threshold-value">0.5</output><input id="speed-quiet-threshold" type="range" min="0.05" max="20" step="0.05" value="0.5"></label>
+            <label class="parameter-row">Durée repos (ms) <output id="speed-quiet-duration-value">700</output><input id="speed-quiet-duration" type="range" min="100" max="5000" step="10" value="700"></label>
             <label class="parameter-row">Limite correction autour du trim (°) <output id="speed-angle-limit-value">10</output><input id="speed-angle-limit" type="range" min="1" max="15" step="0.1" value="10"></label>
             <label class="parameter-row">Limite absolue cible (°) <output id="speed-absolute-angle-limit-value">15</output><input id="speed-absolute-angle-limit" type="range" min="5" max="45" step="0.1" value="15"></label>
             <label class="parameter-row">Pente cible maximale (°/s) <output id="speed-target-slew-value">30</output><input id="speed-target-slew" type="range" min="1" max="180" step="1" value="30"></label>
@@ -96,7 +100,7 @@
             <label class="parameter-row">Kd <output id="kd-value">0</output><input id="kd" type="range" min="0" max="2000" step="1" value="0"></label>
             <label class="parameter-row">Consigne rotation (°/s) <output id="yaw-target-value">0</output><input id="yaw-target" type="range" min="-360" max="360" step="1" value="0"></label>
             <label class="parameter-row">Kp yaw (commande / °/s) <output id="yaw-kp-value">1</output><input id="yaw-kp" type="range" min="0" max="20" step="0.01" value="1"></label>
-            <div class="pd-readout"><span>cible effective</span><strong id="speed-effective-target">—</strong><span>correction vitesse</span><strong id="speed-correction">—</strong><span>auto-trim intégral</span><strong id="speed-integral">—</strong><span>rotation</span><strong id="yaw-feedback-state">inactive</strong><span>u_turn</span><strong id="turn-command">0</strong></div>
+            <div class="pd-readout"><span>cible effective</span><strong id="speed-effective-target">—</strong><span>correction vitesse</span><strong id="speed-correction">—</strong><span>I vitesse</span><strong id="speed-integral">—</strong><span>auto-trim repos</span><strong id="speed-auto-trim">—</strong><span>état</span><strong id="speed-motion-state">—</strong><span>rotation</span><strong id="yaw-feedback-state">inactive</strong><span>u_turn</span><strong id="turn-command">0</strong></div>
           </article>
         </div>
       </section>

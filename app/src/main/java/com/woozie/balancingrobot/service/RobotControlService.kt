@@ -516,6 +516,7 @@ class RobotControlService : Service() {
         }
         serverScope.launch(Dispatchers.IO) {
             val ok = motorScheduler?.arm() == true
+            if (ok) velocityOuterLoop.setAutoTrimLearningEnabled(true)
             _state.update { state ->
                 state.copy(motors = state.motors.copy(
                     armState = if (ok) MotorArmState.BALANCE_ARMED else MotorArmState.FAULT_LATCHED,
@@ -527,6 +528,7 @@ class RobotControlService : Service() {
     }
 
     fun disarmBalance() {
+        velocityOuterLoop.setAutoTrimLearningEnabled(false)
         motorScheduler?.disarm()
         _state.update { it.copy(motors = it.motors.copy(
             armState = when {
@@ -839,7 +841,11 @@ class RobotControlService : Service() {
         speedLoopActualRateHz = 0.0
         speedFeedbackActualRateHz = 0.0
         lastSpeedFeedbackSequence = null
-        velocityOuterLoop = VelocityOuterLoop(activeConfig)
+        velocityOuterLoop = VelocityOuterLoop(activeConfig).also {
+            // Wheel feedback may exist while the service is merely running;
+            // auto-trim is only allowed after explicit balance arm.
+            it.setAutoTrimLearningEnabled(false)
+        }
         imuLog.clear()
         trace.clear()
         lastTracePublishNs = 0L
@@ -1068,7 +1074,13 @@ class RobotControlService : Service() {
                 precisionHeld = driveSetpoint.precisionHeld,
             ))
         }
-        val speedOutput = updateSpeedLoop(receivedTimestampNs, driveSetpoint.speedTargetCmPerSec)
+        val speedOutput = updateSpeedLoop(
+            nowNs = receivedTimestampNs,
+            targetCmPerSec = driveSetpoint.speedTargetCmPerSec,
+            yawTargetDegPerSec = driveSetpoint.yawTargetDegPerSec,
+            pitchRateDegPerSec = gyroDps,
+            yawRateDegPerSec = gyroZDps ?: 0.0,
+        )
         val step = imuRuntime?.step(
             accel!!,
             gyroDps,
@@ -1154,7 +1166,13 @@ class RobotControlService : Service() {
         )
     }
 
-    private fun updateSpeedLoop(nowNs: Long, targetCmPerSec: Double = activeConfig.speedTargetCmPerSec): VelocityLoopOutput {
+    private fun updateSpeedLoop(
+        nowNs: Long,
+        targetCmPerSec: Double = activeConfig.speedTargetCmPerSec,
+        yawTargetDegPerSec: Double = activeConfig.yawTargetDegPerSec,
+        pitchRateDegPerSec: Double = 0.0,
+        yawRateDegPerSec: Double = 0.0,
+    ): VelocityLoopOutput {
         val snapshot = motorScheduler?.velocitySnapshot()
         val feedback = if (
             snapshot != null && snapshot.values.size >= 2 && snapshot.timestampsNs.size >= 2 &&
@@ -1180,7 +1198,14 @@ class RobotControlService : Service() {
                 rightTimestampNs = snapshot.timestampsNs[1],
             )
         } else null
-        val output = velocityOuterLoop.step(nowNs, feedback, targetCmPerSec)
+        val output = velocityOuterLoop.step(
+            nowNs = nowNs,
+            feedback = feedback,
+            targetCmPerSec = targetCmPerSec,
+            yawTargetDegPerSec = yawTargetDegPerSec,
+            pitchRateDegPerSec = pitchRateDegPerSec,
+            yawRateDegPerSec = yawRateDegPerSec,
+        )
         if (output.updated) {
             speedLoopActualRateHz = speedLoopRateMeter.record(nowNs).frequencyHz
             _state.update { state ->
@@ -1203,8 +1228,16 @@ class RobotControlService : Service() {
                     errorCmPerSec = output.errorCmPerSec,
                     correctionDeg = output.correctionDeg,
                     integralCorrectionDeg = output.integralCorrectionDeg,
+                    proportionalCorrectionDeg = output.proportionalCorrectionDeg,
+                    speedIntegralDeg = output.speedIntegralDeg,
                     trimDeg = output.trimDeg,
+                    autoTrimDeg = output.autoTrimDeg,
                     effectiveTargetDeg = output.effectiveTargetDeg,
+                    autoTrimState = output.autoTrimState,
+                    settledDurationSec = output.settledDurationSec,
+                    quiet = output.quiet,
+                    autoTrimSaturated = output.autoTrimSaturated,
+                    userCommandActive = output.userCommandActive,
                     saturated = output.saturated,
                     slewLimited = output.slewLimited,
                 ))
@@ -1274,6 +1307,13 @@ class RobotControlService : Service() {
                 speedErrorCmPerSec = speedOutput?.errorCmPerSec,
                 speedCorrectionDeg = speedOutput?.correctionDeg,
                 speedIntegralCorrectionDeg = speedOutput?.integralCorrectionDeg,
+                speedProportionalCorrectionDeg = speedOutput?.proportionalCorrectionDeg,
+                speedIntegralDeg = speedOutput?.speedIntegralDeg,
+                speedAutoTrimDeg = speedOutput?.autoTrimDeg,
+                speedAutoTrimState = speedOutput?.autoTrimState,
+                speedSettledDurationSec = speedOutput?.settledDurationSec,
+                speedQuiet = speedOutput?.quiet,
+                speedAutoTrimSaturated = speedOutput?.autoTrimSaturated,
                 speedTargetSlewLimited = speedOutput?.slewLimited,
                 speedStale = speedOutput?.stale,
                 speedTargetSaturated = speedOutput?.saturated,
@@ -1371,9 +1411,13 @@ class RobotControlService : Service() {
             put("speedFilterAlpha", config.speedFilterAlpha)
             put("speedTargetAngleLimitDeg", config.speedTargetAngleLimitDeg)
             put("speedIntegralGainDegPerCmPerSecSec", config.speedIntegralGainDegPerCmPerSecSec)
+            put("speedAutoTrimGainDegPerCmPerSecSec", config.speedAutoTrimGainDegPerCmPerSecSec)
+            put("speedIntegralReleaseRateDegPerSec", config.speedIntegralReleaseRateDegPerSec)
             put("speedAbsoluteAngleLimitDeg", config.speedAbsoluteAngleLimitDeg)
             put("speedTargetSlewRateDegPerSec", config.speedTargetSlewRateDegPerSec)
             put("speedFeedbackTimeoutMs", config.speedFeedbackTimeoutMs)
+            put("speedQuietThresholdCmPerSec", config.speedQuietThresholdCmPerSec)
+            put("speedQuietDurationMs", config.speedQuietDurationMs)
             put("yawTargetDegPerSec", config.yawTargetDegPerSec)
             put("yawKpCommandPerDegPerSec", config.yawKpCommandPerDegPerSec)
             put("wheelDiameterMm", config.wheelDiameterMm)
@@ -1394,6 +1438,13 @@ class RobotControlService : Service() {
             speed.errorCmPerSec?.let { put("speedErrorCmPerSec", it) }
             put("speedCorrectionDeg", speed.correctionDeg)
             put("speedIntegralCorrectionDeg", speed.integralCorrectionDeg)
+            put("speedProportionalCorrectionDeg", speed.proportionalCorrectionDeg)
+            put("speedIntegralDeg", speed.speedIntegralDeg)
+            put("speedAutoTrimDeg", speed.autoTrimDeg)
+            put("speedAutoTrimState", speed.autoTrimState)
+            put("speedSettledDurationSec", speed.settledDurationSec)
+            put("speedQuiet", speed.quiet)
+            put("speedAutoTrimSaturated", speed.autoTrimSaturated)
             put("speedEffectiveTargetDeg", speed.effectiveTargetDeg)
             put("speedTargetSaturated", speed.saturated)
             put("speedTargetSlewLimited", speed.slewLimited)
@@ -1515,6 +1566,10 @@ class RobotControlService : Service() {
                         ?: _state.value.config.speedTargetAngleLimitDeg,
                     speedIntegralGainDegPerCmPerSecSec = WebProtocol.payloadDouble(command, "speedIntegralGainDegPerCmPerSecSec")
                         ?: _state.value.config.speedIntegralGainDegPerCmPerSecSec,
+                    speedAutoTrimGainDegPerCmPerSecSec = WebProtocol.payloadDouble(command, "speedAutoTrimGainDegPerCmPerSecSec")
+                        ?: _state.value.config.speedAutoTrimGainDegPerCmPerSecSec,
+                    speedIntegralReleaseRateDegPerSec = WebProtocol.payloadDouble(command, "speedIntegralReleaseRateDegPerSec")
+                        ?: _state.value.config.speedIntegralReleaseRateDegPerSec,
                     speedAbsoluteAngleLimitDeg = WebProtocol.payloadDouble(command, "speedAbsoluteAngleLimitDeg")
                         ?: _state.value.config.speedAbsoluteAngleLimitDeg,
                     speedTargetSlewRateDegPerSec = WebProtocol.payloadDouble(command, "speedTargetSlewRateDegPerSec")
@@ -1522,6 +1577,12 @@ class RobotControlService : Service() {
                     speedFeedbackTimeoutMs = (
                         WebProtocol.payloadInt(command, "speedFeedbackTimeoutMs")
                             ?: _state.value.config.speedFeedbackTimeoutMs.toInt()
+                        ).toLong(),
+                    speedQuietThresholdCmPerSec = WebProtocol.payloadDouble(command, "speedQuietThresholdCmPerSec")
+                        ?: _state.value.config.speedQuietThresholdCmPerSec,
+                    speedQuietDurationMs = (
+                        WebProtocol.payloadInt(command, "speedQuietDurationMs")
+                            ?: _state.value.config.speedQuietDurationMs.toInt()
                         ).toLong(),
                     yawTargetDegPerSec = WebProtocol.payloadDouble(command, "yawTargetDegPerSec")
                         ?: _state.value.config.yawTargetDegPerSec,

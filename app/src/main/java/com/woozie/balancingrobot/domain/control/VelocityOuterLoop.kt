@@ -3,6 +3,8 @@ package com.woozie.balancingrobot.domain.control
 import com.woozie.balancingrobot.domain.model.RobotConfig
 import com.woozie.balancingrobot.domain.model.RobotConfigValidator
 import kotlin.math.PI
+import kotlin.math.abs
+import kotlin.math.max
 import kotlin.math.min
 import kotlin.math.sign
 
@@ -30,10 +32,20 @@ data class VelocityLoopOutput(
     val appliedTargetCmPerSec: Double = targetCmPerSec,
     val speedCommandSlewLimited: Boolean = false,
     val errorCmPerSec: Double? = null,
+    /** Dynamic speed-loop correction: P + temporary speed integral. */
     val correctionDeg: Double = 0.0,
+    /** Compatibility alias for the temporary speed integral. */
     val integralCorrectionDeg: Double = 0.0,
+    val proportionalCorrectionDeg: Double = 0.0,
+    val speedIntegralDeg: Double = 0.0,
     val trimDeg: Double,
+    val autoTrimDeg: Double = 0.0,
     val effectiveTargetDeg: Double,
+    val autoTrimState: String = "REST",
+    val settledDurationSec: Double = 0.0,
+    val quiet: Boolean = false,
+    val autoTrimSaturated: Boolean = false,
+    val userCommandActive: Boolean = false,
     val saturated: Boolean = false,
     val slewLimited: Boolean = false,
 )
@@ -54,45 +66,67 @@ fun stepsPerSecondToCmPerSecond(
     return stepsPerSecond.toDouble() * circumferenceCm / (4096.0 * driveRatio)
 }
 
-/** Stateful, I/O-free outer velocity loop. Called from the IMU control thread. */
+/**
+ * Stateful, I/O-free outer velocity controller.
+ *
+ * target = base trim + learned rest trim + Kp_v * speed error + I_speed
+ *
+ * The speed integral is temporary: it is integrated during MANEUVER (including
+ * pure yaw), then released to zero after all commands are released. The learned
+ * auto-trim is updated only in REST, from fresh wheel feedback.
+ */
 class VelocityOuterLoop(initialConfig: RobotConfig) {
+    private enum class MotionState { MANEUVER, RELEASE, REST }
+
     private var config = validated(initialConfig)
     private var lastTickNs = 0L
     private var lastFeedbackSequence: Long? = null
+    private var lastFeedbackTimestampNs: Long? = null
     private var filteredCmPerSec: Double? = null
     private var wasStale = true
-    private var integralCorrectionDeg = 0.0
+    private var autoTrimDeg = 0.0
+    private var speedIntegralDeg = 0.0
+    private var motionState = MotionState.REST
+    private var settledDurationSec = 0.0
     private var currentTargetDeg: Double? = null
     private var currentSpeedTargetCmPerSec: Double? = null
+    private var targetSlewDtSec = 0.0
+    private var autoTrimSaturated = false
+    private var autoTrimLearningEnabled = true
     private var lastOutput: VelocityLoopOutput? = null
 
     fun updateConfig(newConfig: RobotConfig) {
         val valid = validated(newConfig)
         val previous = config
-        val modeChanged = previous.speedLoopEnabled != valid.speedLoopEnabled
-        val resetFilter = modeChanged ||
-            previous.wheelDiameterMm != valid.wheelDiameterMm ||
+        val resetFilter = previous.wheelDiameterMm != valid.wheelDiameterMm ||
             previous.driveRatio != valid.driveRatio ||
             previous.speedFilterAlpha != valid.speedFilterAlpha
         config = valid
         lastTickNs = 0L
-        if (!valid.speedLoopEnabled || modeChanged) {
-            integralCorrectionDeg = 0.0
+        speedIntegralDeg = speedIntegralDeg.coerceIn(
+            -valid.speedTargetAngleLimitDeg,
+            valid.speedTargetAngleLimitDeg,
+        )
+        autoTrimDeg = autoTrimDeg.coerceIn(
+            -valid.speedTargetAngleLimitDeg,
+            valid.speedTargetAngleLimitDeg,
+        )
+        autoTrimSaturated = abs(autoTrimDeg) >= valid.speedTargetAngleLimitDeg - AUTO_TRIM_EPSILON_DEG
+        if (!valid.speedLoopEnabled || previous.speedLoopEnabled != valid.speedLoopEnabled) {
+            autoTrimDeg = 0.0
+            speedIntegralDeg = 0.0
+            motionState = MotionState.REST
+            settledDurationSec = 0.0
             currentTargetDeg = null
             currentSpeedTargetCmPerSec = null
-        } else {
-            integralCorrectionDeg = integralCorrectionDeg.coerceIn(
-                -valid.speedTargetAngleLimitDeg,
-                valid.speedTargetAngleLimitDeg,
-            )
+            autoTrimSaturated = false
         }
         if (resetFilter) {
             filteredCmPerSec = null
             lastFeedbackSequence = null
+            lastFeedbackTimestampNs = null
             wasStale = true
-            integralCorrectionDeg = 0.0
-            currentTargetDeg = null
-            currentSpeedTargetCmPerSec = null
+            settledDurationSec = 0.0
             lastOutput = null
         }
     }
@@ -100,21 +134,40 @@ class VelocityOuterLoop(initialConfig: RobotConfig) {
     fun reset() {
         lastTickNs = 0L
         lastFeedbackSequence = null
+        lastFeedbackTimestampNs = null
         filteredCmPerSec = null
         wasStale = true
-        integralCorrectionDeg = 0.0
+        autoTrimDeg = 0.0
+        speedIntegralDeg = 0.0
+        motionState = MotionState.REST
+        settledDurationSec = 0.0
         currentTargetDeg = null
         currentSpeedTargetCmPerSec = null
+        targetSlewDtSec = 0.0
+        autoTrimSaturated = false
         lastOutput = null
+    }
+
+    /** Gates learning to an armed balance session. Enabling starts a fresh session. */
+    fun setAutoTrimLearningEnabled(enabled: Boolean) {
+        if (enabled && !autoTrimLearningEnabled) reset()
+        autoTrimLearningEnabled = enabled
     }
 
     fun step(
         nowNs: Long,
         feedback: WheelVelocityFeedback?,
         targetCmPerSec: Double = config.speedTargetCmPerSec,
+        yawTargetDegPerSec: Double = config.yawTargetDegPerSec,
+        pitchRateDegPerSec: Double = 0.0,
+        yawRateDegPerSec: Double = 0.0,
     ): VelocityLoopOutput {
         require(nowNs > 0L) { "monotonic timestamp must be positive" }
         require(targetCmPerSec.isFinite()) { "speed target must be finite" }
+        require(yawTargetDegPerSec.isFinite()) { "yaw target must be finite" }
+        require(pitchRateDegPerSec.isFinite()) { "pitch rate must be finite" }
+        require(yawRateDegPerSec.isFinite()) { "yaw rate must be finite" }
+
         val periodNs = 1_000_000_000L / config.speedLoopRateHz
         if (lastTickNs > 0L && nowNs >= lastTickNs && nowNs - lastTickNs < periodNs) {
             return checkNotNull(lastOutput).copy(updated = false)
@@ -125,6 +178,7 @@ class VelocityOuterLoop(initialConfig: RobotConfig) {
         val dtSec = if (previousTickNs > 0L) {
             ((nowNs - previousTickNs).toDouble() / 1_000_000_000.0).coerceIn(0.0, 0.5)
         } else 0.0
+
         val requestedSpeedTarget = targetCmPerSec.coerceIn(
             -config.speedTargetLimitCmPerSec,
             config.speedTargetLimitCmPerSec,
@@ -135,174 +189,308 @@ class VelocityOuterLoop(initialConfig: RobotConfig) {
             initializeAtDesired = previousTickNs == 0L,
         )
         val speedCommandSlewLimited = appliedSpeedTarget != requestedSpeedTarget
+        val userCommandActive = abs(requestedSpeedTarget) > COMMAND_DEADBAND_CM_PER_SEC ||
+            abs(yawTargetDegPerSec) > YAW_COMMAND_DEADBAND_DEG_PER_SEC
+        updateMotionState(userCommandActive)
 
-        val ageNs = feedback?.let {
-            nowNs - min(it.leftTimestampNs, it.rightTimestampNs)
-        }
+        val ageNs = feedback?.let { nowNs - min(it.leftTimestampNs, it.rightTimestampNs) }
         val fresh = feedback != null && ageNs != null && ageNs >= 0L &&
             ageNs <= config.speedFeedbackTimeoutMs * 1_000_000L
+
         if (!fresh) {
             wasStale = true
-            // Do not freeze an old acceleration command. Clear the learned trim
-            // correction and bring the applied target back toward the manual
-            // trim through the same slew-rate limiter used during recovery.
-            integralCorrectionDeg = 0.0
-            val trim = config.targetDeg
-            val desired = if (config.speedLoopEnabled) {
-                trim.coerceIn(-config.speedAbsoluteAngleLimitDeg, config.speedAbsoluteAngleLimitDeg)
-            } else trim
-            val effective = approachTarget(desired, dtSec, config.speedLoopEnabled)
-            return (lastOutput ?: VelocityLoopOutput(
-                enabled = config.speedLoopEnabled,
-                updated = true,
-                stale = true,
-                targetCmPerSec = requestedSpeedTarget,
-                appliedTargetCmPerSec = appliedSpeedTarget,
+            if (motionState == MotionState.RELEASE || motionState == MotionState.REST) {
+                releaseSpeedIntegral(dtSec)
+            }
+            if (motionState == MotionState.RELEASE) settledDurationSec = 0.0
+            return buildOutput(
+                requestedSpeedTarget = requestedSpeedTarget,
+                appliedSpeedTarget = appliedSpeedTarget,
                 speedCommandSlewLimited = speedCommandSlewLimited,
-                trimDeg = trim,
-                effectiveTargetDeg = effective,
-            )).copy(
-                enabled = config.speedLoopEnabled,
-                updated = true,
-                stale = true,
+                feedback = feedback,
                 feedbackAgeMs = ageNs?.coerceAtLeast(0L)?.div(1_000_000.0),
-                targetCmPerSec = requestedSpeedTarget,
-                appliedTargetCmPerSec = appliedSpeedTarget,
-                speedCommandSlewLimited = speedCommandSlewLimited,
-                correctionDeg = effective - trim,
-                integralCorrectionDeg = 0.0,
-                trimDeg = trim,
-                effectiveTargetDeg = effective,
-                saturated = false,
-                slewLimited = effective != desired,
-            ).also { lastOutput = it }
+                stale = true,
+                meanCmPerSec = null,
+                filteredCmPerSec = filteredCmPerSec,
+                errorCmPerSec = null,
+                proportionalCorrectionDeg = 0.0,
+                quiet = false,
+                pitchRateDegPerSec = pitchRateDegPerSec,
+                yawRateDegPerSec = yawRateDegPerSec,
+            )
         }
 
-        feedback!!
+        val validFeedback = checkNotNull(feedback)
+        val feedbackTimestampNs = min(validFeedback.leftTimestampNs, validFeedback.rightTimestampNs)
+        val newFeedback = validFeedback.sequence != lastFeedbackSequence
+        val feedbackWasStale = wasStale
+        val feedbackDtSec = if (newFeedback && !feedbackWasStale && lastFeedbackTimestampNs != null) {
+            ((feedbackTimestampNs - checkNotNull(lastFeedbackTimestampNs)).toDouble() /
+                1_000_000_000.0).coerceIn(0.0, 0.5)
+        } else 0.0
         val left = stepsPerSecondToCmPerSecond(
-            feedback.leftStepsPerSec,
+            validFeedback.leftStepsPerSec,
             config.wheelDiameterMm,
             config.driveRatio,
         )
         val right = stepsPerSecondToCmPerSecond(
-            feedback.rightStepsPerSec,
+            validFeedback.rightStepsPerSec,
             config.wheelDiameterMm,
             config.driveRatio,
         )
         val mean = (left + right) / 2.0
-        if (feedback.sequence != lastFeedbackSequence) {
+        if (newFeedback) {
             filteredCmPerSec = if (filteredCmPerSec == null || wasStale) mean else {
                 config.speedFilterAlpha * mean +
                     (1.0 - config.speedFilterAlpha) * checkNotNull(filteredCmPerSec)
             }
-            lastFeedbackSequence = feedback.sequence
+            lastFeedbackSequence = validFeedback.sequence
+            lastFeedbackTimestampNs = feedbackTimestampNs
         }
         wasStale = false
         val filtered = checkNotNull(filteredCmPerSec)
         val error = appliedSpeedTarget - filtered
+        val quiet = abs(filtered) < config.speedQuietThresholdCmPerSec &&
+            abs(pitchRateDegPerSec) < QUIET_PITCH_RATE_THRESHOLD_DEG_PER_SEC &&
+            abs(yawRateDegPerSec) < QUIET_YAW_RATE_THRESHOLD_DEG_PER_SEC &&
+            abs(yawTargetDegPerSec) <= YAW_COMMAND_DEADBAND_DEG_PER_SEC &&
+            abs(appliedSpeedTarget) <= COMMAND_DEADBAND_CM_PER_SEC
+
         if (!config.speedLoopEnabled) {
-            integralCorrectionDeg = 0.0
-            currentTargetDeg = config.targetDeg
-            return VelocityLoopOutput(
-                enabled = false,
-                updated = true,
-                stale = false,
-                feedbackSequence = feedback.sequence,
+            speedIntegralDeg = 0.0
+            return buildOutput(
+                requestedSpeedTarget = requestedSpeedTarget,
+                appliedSpeedTarget = appliedSpeedTarget,
+                speedCommandSlewLimited = speedCommandSlewLimited,
+                feedback = validFeedback,
                 feedbackAgeMs = ageNs / 1_000_000.0,
-                leftRawStepsPerSec = feedback.leftStepsPerSec,
-                rightRawStepsPerSec = feedback.rightStepsPerSec,
-                leftCmPerSec = left,
-                rightCmPerSec = right,
+                stale = false,
                 meanCmPerSec = mean,
                 filteredCmPerSec = filtered,
-                targetCmPerSec = requestedSpeedTarget,
-                appliedTargetCmPerSec = appliedSpeedTarget,
-                speedCommandSlewLimited = speedCommandSlewLimited,
                 errorCmPerSec = error,
-                trimDeg = config.targetDeg,
-                effectiveTargetDeg = config.targetDeg,
-            ).also { lastOutput = it }
+                proportionalCorrectionDeg = 0.0,
+                quiet = quiet,
+                pitchRateDegPerSec = pitchRateDegPerSec,
+                yawRateDegPerSec = yawRateDegPerSec,
+            )
         }
 
-        val proportionalCorrection = config.speedKevDegPerCmPerSec * error
-        val integralCandidate = (integralCorrectionDeg +
-            config.speedIntegralGainDegPerCmPerSecSec * error * dtSec)
+        updateRestQualification(
+            quiet = quiet,
+            newFeedback = newFeedback,
+            feedbackDtSec = feedbackDtSec,
+            appliedSpeedTarget = appliedSpeedTarget,
+        )
+
+        val proportionalCorrectionDeg = config.speedKevDegPerCmPerSec * error
+        if (motionState == MotionState.MANEUVER && newFeedback && !feedbackWasStale && feedbackDtSec > 0.0) {
+            updateSpeedIntegral(error, feedbackDtSec, proportionalCorrectionDeg)
+        } else if (motionState == MotionState.RELEASE || motionState == MotionState.REST) {
+            releaseSpeedIntegral(dtSec)
+        }
+
+        if (autoTrimLearningEnabled && motionState == MotionState.REST &&
+            newFeedback && !feedbackWasStale && feedbackDtSec > 0.0
+        ) {
+            updateAutoTrim(
+                filteredSpeedCmPerSec = filtered,
+                feedbackDtSec = feedbackDtSec,
+                proportionalCorrectionDeg = proportionalCorrectionDeg,
+            )
+        }
+
+        return buildOutput(
+            requestedSpeedTarget = requestedSpeedTarget,
+            appliedSpeedTarget = appliedSpeedTarget,
+            speedCommandSlewLimited = speedCommandSlewLimited,
+            feedback = validFeedback,
+            feedbackAgeMs = ageNs / 1_000_000.0,
+            stale = false,
+            meanCmPerSec = mean,
+            filteredCmPerSec = filtered,
+            errorCmPerSec = error,
+            proportionalCorrectionDeg = proportionalCorrectionDeg,
+            quiet = quiet,
+            pitchRateDegPerSec = pitchRateDegPerSec,
+            yawRateDegPerSec = yawRateDegPerSec,
+        )
+    }
+
+    private fun updateMotionState(userCommandActive: Boolean) {
+        if (userCommandActive) {
+            motionState = MotionState.MANEUVER
+            settledDurationSec = 0.0
+        } else if (motionState == MotionState.MANEUVER) {
+            motionState = MotionState.RELEASE
+            settledDurationSec = 0.0
+        }
+    }
+
+    private fun updateRestQualification(
+        quiet: Boolean,
+        newFeedback: Boolean,
+        feedbackDtSec: Double,
+        appliedSpeedTarget: Double,
+    ) {
+        if (motionState != MotionState.RELEASE) return
+        val integralReleased = abs(speedIntegralDeg) <= SPEED_INTEGRAL_EPSILON_DEG
+        if (newFeedback && quiet && integralReleased &&
+            abs(appliedSpeedTarget) <= COMMAND_DEADBAND_CM_PER_SEC
+        ) {
+            settledDurationSec += feedbackDtSec
+            if (settledDurationSec >= config.speedQuietDurationMs / 1_000.0) {
+                speedIntegralDeg = 0.0
+                motionState = MotionState.REST
+            }
+        } else if (!quiet || !integralReleased ||
+            abs(appliedSpeedTarget) > COMMAND_DEADBAND_CM_PER_SEC
+        ) {
+            settledDurationSec = 0.0
+        }
+    }
+
+    private fun updateSpeedIntegral(
+        errorCmPerSec: Double,
+        feedbackDtSec: Double,
+        proportionalCorrectionDeg: Double,
+    ) {
+        val candidate = (speedIntegralDeg +
+            config.speedIntegralGainDegPerCmPerSecSec * errorCmPerSec * feedbackDtSec)
             .coerceIn(-config.speedTargetAngleLimitDeg, config.speedTargetAngleLimitDeg)
-        val rawCorrection = proportionalCorrection + integralCandidate
+        val rawCorrection = proportionalCorrectionDeg + candidate
         val correction = rawCorrection.coerceIn(
             -config.speedTargetAngleLimitDeg,
             config.speedTargetAngleLimitDeg,
         )
-        val correctionSaturated = rawCorrection != correction
         val integrationWouldWorsenSaturation =
-            (rawCorrection > config.speedTargetAngleLimitDeg && error > 0.0) ||
-                (rawCorrection < -config.speedTargetAngleLimitDeg && error < 0.0)
-        if (!correctionSaturated || !integrationWouldWorsenSaturation) {
-            integralCorrectionDeg = integralCandidate
+            (rawCorrection > config.speedTargetAngleLimitDeg && errorCmPerSec > 0.0) ||
+                (rawCorrection < -config.speedTargetAngleLimitDeg && errorCmPerSec < 0.0)
+        if (rawCorrection == correction || !integrationWouldWorsenSaturation) {
+            speedIntegralDeg = candidate
         }
-        val rawTarget = config.targetDeg + correction
-        val absoluteTarget = rawTarget.coerceIn(
-            -config.speedAbsoluteAngleLimitDeg,
-            config.speedAbsoluteAngleLimitDeg,
+    }
+
+    private fun releaseSpeedIntegral(dtSec: Double) {
+        if (abs(speedIntegralDeg) <= SPEED_INTEGRAL_EPSILON_DEG) {
+            speedIntegralDeg = 0.0
+            return
+        }
+        val maxDelta = config.speedIntegralReleaseRateDegPerSec * dtSec
+        if (dtSec <= 0.0 || maxDelta <= 0.0) return
+        speedIntegralDeg = when {
+            abs(speedIntegralDeg) <= maxDelta -> 0.0
+            else -> speedIntegralDeg - sign(speedIntegralDeg) * maxDelta
+        }
+    }
+
+    private fun updateAutoTrim(
+        filteredSpeedCmPerSec: Double,
+        feedbackDtSec: Double,
+        proportionalCorrectionDeg: Double,
+    ) {
+        val candidate = (autoTrimDeg +
+            config.speedAutoTrimGainDegPerCmPerSecSec * (-filteredSpeedCmPerSec) * feedbackDtSec)
+            .coerceIn(-config.speedTargetAngleLimitDeg, config.speedTargetAngleLimitDeg)
+        val nonTrimTarget = config.targetDeg + proportionalCorrectionDeg + speedIntegralDeg
+        val minTrim = max(
+            -config.speedTargetAngleLimitDeg,
+            -config.speedAbsoluteAngleLimitDeg - nonTrimTarget,
         )
-        val effective = approachTarget(
-            absoluteTarget,
-            dtSec,
-            applySlew = true,
-            initializeAtDesired = currentTargetDeg == null,
+        val maxTrim = min(
+            config.speedTargetAngleLimitDeg,
+            config.speedAbsoluteAngleLimitDeg - nonTrimTarget,
         )
+        val next = if (minTrim <= maxTrim) candidate.coerceIn(minTrim, maxTrim) else autoTrimDeg
+        autoTrimDeg = next
+        autoTrimSaturated = next != candidate ||
+            abs(next) >= config.speedTargetAngleLimitDeg - AUTO_TRIM_EPSILON_DEG
+    }
+
+    private fun buildOutput(
+        requestedSpeedTarget: Double,
+        appliedSpeedTarget: Double,
+        speedCommandSlewLimited: Boolean,
+        feedback: WheelVelocityFeedback?,
+        feedbackAgeMs: Double?,
+        stale: Boolean,
+        meanCmPerSec: Double?,
+        filteredCmPerSec: Double?,
+        errorCmPerSec: Double?,
+        proportionalCorrectionDeg: Double,
+        quiet: Boolean,
+        pitchRateDegPerSec: Double,
+        yawRateDegPerSec: Double,
+    ): VelocityLoopOutput {
+        val enabled = config.speedLoopEnabled
+        val correctionDeg = if (enabled) {
+            (proportionalCorrectionDeg + speedIntegralDeg).coerceIn(
+                -config.speedTargetAngleLimitDeg,
+                config.speedTargetAngleLimitDeg,
+            )
+        } else 0.0
+        val rawTarget = config.targetDeg + autoTrimDeg + correctionDeg
+        val absoluteTarget = if (enabled) {
+            rawTarget.coerceIn(-config.speedAbsoluteAngleLimitDeg, config.speedAbsoluteAngleLimitDeg)
+        } else config.targetDeg
+        val effectiveTarget = if (enabled) {
+            approachTarget(absoluteTarget)
+        } else {
+            currentTargetDeg = config.targetDeg
+            config.targetDeg
+        }
         return VelocityLoopOutput(
-            enabled = config.speedLoopEnabled,
+            enabled = enabled,
             updated = true,
-            stale = false,
-            feedbackSequence = feedback.sequence,
-            feedbackAgeMs = ageNs / 1_000_000.0,
-            leftRawStepsPerSec = feedback.leftStepsPerSec,
-            rightRawStepsPerSec = feedback.rightStepsPerSec,
-            leftCmPerSec = left,
-            rightCmPerSec = right,
-            meanCmPerSec = mean,
-            filteredCmPerSec = filtered,
+            stale = stale,
+            feedbackSequence = feedback?.sequence,
+            feedbackAgeMs = feedbackAgeMs,
+            leftRawStepsPerSec = feedback?.leftStepsPerSec,
+            rightRawStepsPerSec = feedback?.rightStepsPerSec,
+            leftCmPerSec = feedback?.let {
+                stepsPerSecondToCmPerSecond(it.leftStepsPerSec, config.wheelDiameterMm, config.driveRatio)
+            },
+            rightCmPerSec = feedback?.let {
+                stepsPerSecondToCmPerSecond(it.rightStepsPerSec, config.wheelDiameterMm, config.driveRatio)
+            },
+            meanCmPerSec = meanCmPerSec,
+            filteredCmPerSec = filteredCmPerSec,
             targetCmPerSec = requestedSpeedTarget,
             appliedTargetCmPerSec = appliedSpeedTarget,
             speedCommandSlewLimited = speedCommandSlewLimited,
-            errorCmPerSec = error,
-            correctionDeg = correction,
-            integralCorrectionDeg = integralCorrectionDeg,
-            trimDeg = config.targetDeg,
-            effectiveTargetDeg = effective,
-            saturated = correctionSaturated || absoluteTarget != rawTarget,
-            slewLimited = effective != absoluteTarget,
+            errorCmPerSec = errorCmPerSec,
+            correctionDeg = correctionDeg,
+            integralCorrectionDeg = speedIntegralDeg,
+            proportionalCorrectionDeg = proportionalCorrectionDeg,
+            speedIntegralDeg = speedIntegralDeg,
+            trimDeg = config.targetDeg + autoTrimDeg,
+            autoTrimDeg = autoTrimDeg,
+            effectiveTargetDeg = effectiveTarget,
+            autoTrimState = motionState.name,
+            settledDurationSec = settledDurationSec,
+            quiet = quiet && abs(pitchRateDegPerSec) < QUIET_PITCH_RATE_THRESHOLD_DEG_PER_SEC &&
+                abs(yawRateDegPerSec) < QUIET_YAW_RATE_THRESHOLD_DEG_PER_SEC,
+            autoTrimSaturated = autoTrimSaturated,
+            userCommandActive = motionState == MotionState.MANEUVER,
+            saturated = correctionDeg != proportionalCorrectionDeg + speedIntegralDeg ||
+                absoluteTarget != rawTarget,
+            slewLimited = effectiveTarget != absoluteTarget,
         ).also { lastOutput = it }
     }
 
-    private fun approachTarget(
-        desired: Double,
-        dtSec: Double,
-        applySlew: Boolean,
-        initializeAtDesired: Boolean = false,
-    ): Double {
-        if (currentTargetDeg == null && initializeAtDesired) {
+    private fun approachTarget(desired: Double): Double {
+        if (currentTargetDeg == null) {
             currentTargetDeg = desired
             return desired
         }
-        val current = (currentTargetDeg ?: initialTargetDeg()).let { value ->
-            if (config.speedLoopEnabled) {
-                value.coerceIn(-config.speedAbsoluteAngleLimitDeg, config.speedAbsoluteAngleLimitDeg)
-            } else value
+        val current = currentTargetDeg ?: initialTargetDeg()
+        val maxDelta = config.speedTargetSlewRateDegPerSec * targetSlewDtSec
+        val delta = desired - current
+        currentTargetDeg = when {
+            targetSlewDtSec <= 0.0 || maxDelta <= 0.0 -> current
+            abs(delta) <= maxDelta -> desired
+            else -> current + sign(delta) * maxDelta
         }
-        val next = if (!applySlew || dtSec <= 0.0) {
-            if (currentTargetDeg == null) current else current
-        } else {
-            val maxDelta = config.speedTargetSlewRateDegPerSec * dtSec
-            val delta = desired - current
-            when {
-                kotlin.math.abs(delta) <= maxDelta -> desired
-                else -> current + sign(delta) * maxDelta
-            }
-        }
-        currentTargetDeg = next
-        return next
+        return currentTargetDeg!!
     }
 
     private fun approachSpeedTarget(
@@ -310,6 +498,7 @@ class VelocityOuterLoop(initialConfig: RobotConfig) {
         dtSec: Double,
         initializeAtDesired: Boolean,
     ): Double {
+        targetSlewDtSec = dtSec
         if (currentSpeedTargetCmPerSec == null && initializeAtDesired) {
             currentSpeedTargetCmPerSec = desired
             return desired
@@ -319,7 +508,7 @@ class VelocityOuterLoop(initialConfig: RobotConfig) {
         val delta = desired - current
         val next = when {
             dtSec <= 0.0 || maxDelta <= 0.0 -> current
-            kotlin.math.abs(delta) <= maxDelta -> desired
+            abs(delta) <= maxDelta -> desired
             else -> current + sign(delta) * maxDelta
         }
         currentSpeedTargetCmPerSec = next
@@ -327,11 +516,23 @@ class VelocityOuterLoop(initialConfig: RobotConfig) {
     }
 
     private fun initialTargetDeg(): Double = if (config.speedLoopEnabled) {
-        config.targetDeg.coerceIn(-config.speedAbsoluteAngleLimitDeg, config.speedAbsoluteAngleLimitDeg)
+        (config.targetDeg + autoTrimDeg).coerceIn(
+            -config.speedAbsoluteAngleLimitDeg,
+            config.speedAbsoluteAngleLimitDeg,
+        )
     } else config.targetDeg
 
     private fun validated(value: RobotConfig): RobotConfig {
         require(RobotConfigValidator.validate(value).isValid) { "invalid robot config" }
         return value
+    }
+
+    private companion object {
+        const val COMMAND_DEADBAND_CM_PER_SEC = 0.1
+        const val YAW_COMMAND_DEADBAND_DEG_PER_SEC = 1.0
+        const val QUIET_PITCH_RATE_THRESHOLD_DEG_PER_SEC = 3.0
+        const val QUIET_YAW_RATE_THRESHOLD_DEG_PER_SEC = 3.0
+        const val SPEED_INTEGRAL_EPSILON_DEG = 1e-9
+        const val AUTO_TRIM_EPSILON_DEG = 1e-9
     }
 }
