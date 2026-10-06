@@ -98,6 +98,10 @@ data class RobotConfig(
     /** Maximum target-angle movement per second. */
     val speedTargetSlewRateDegPerSec: Double = 30.0,
     val speedFeedbackTimeoutMs: Long = 100,
+    /** Absolute filtered mean-speed threshold used to qualify a settled robot. */
+    val speedQuietThresholdCmPerSec: Double = 0.5,
+    /** Required continuous quiet duration before auto-trim learning resumes. */
+    val speedQuietDurationMs: Long = 700,
     /** Desired yaw rate. Zero explicitly disables the yaw correction loop. */
     val yawTargetDegPerSec: Double = 0.0,
     /** Proportional yaw gain in motor-command units per deg/s. */

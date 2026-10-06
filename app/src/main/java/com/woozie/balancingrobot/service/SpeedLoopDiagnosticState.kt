@@ -21,6 +21,10 @@ data class SpeedLoopDiagnosticState(
     val integralCorrectionDeg: Double = 0.0,
     val trimDeg: Double = 0.0,
     val effectiveTargetDeg: Double = 0.0,
+    val autoTrimState: String = "SETTLED",
+    val restTrimDeg: Double = 0.0,
+    val settledDurationSec: Double = 0.0,
+    val quiet: Boolean = false,
     val saturated: Boolean = false,
     val slewLimited: Boolean = false,
 )

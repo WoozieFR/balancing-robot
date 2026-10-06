@@ -46,6 +46,8 @@ object RobotSettings {
     private val speedAbsoluteAngleLimitKey = doublePreferencesKey("speed_absolute_angle_limit_deg")
     private val speedTargetSlewRateKey = doublePreferencesKey("speed_target_slew_rate_deg_per_sec")
     private val speedFeedbackTimeoutKey = intPreferencesKey("speed_feedback_timeout_ms")
+    private val speedQuietThresholdKey = doublePreferencesKey("speed_quiet_threshold_cm_per_sec")
+    private val speedQuietDurationKey = intPreferencesKey("speed_quiet_duration_ms")
     private val yawTargetKey = doublePreferencesKey("yaw_target_deg_per_sec")
     private val yawKpKey = doublePreferencesKey("yaw_kp_command_per_deg_per_sec")
     private val wheelDiameterKey = doublePreferencesKey("wheel_diameter_mm")
@@ -182,6 +184,10 @@ object RobotSettings {
                 ?: defaults.speedTargetSlewRateDegPerSec,
             speedFeedbackTimeoutMs = (preferences[speedFeedbackTimeoutKey]
                 ?: defaults.speedFeedbackTimeoutMs.toInt()).toLong(),
+            speedQuietThresholdCmPerSec = preferences[speedQuietThresholdKey]
+                ?: defaults.speedQuietThresholdCmPerSec,
+            speedQuietDurationMs = (preferences[speedQuietDurationKey]
+                ?: defaults.speedQuietDurationMs.toInt()).toLong(),
             yawTargetDegPerSec = preferences[yawTargetKey] ?: defaults.yawTargetDegPerSec,
             yawKpCommandPerDegPerSec = preferences[yawKpKey] ?: defaults.yawKpCommandPerDegPerSec,
             wheelDiameterMm = preferences[wheelDiameterKey] ?: defaults.wheelDiameterMm,
@@ -226,6 +232,8 @@ object RobotSettings {
             preferences[speedAbsoluteAngleLimitKey] = config.speedAbsoluteAngleLimitDeg
             preferences[speedTargetSlewRateKey] = config.speedTargetSlewRateDegPerSec
             preferences[speedFeedbackTimeoutKey] = config.speedFeedbackTimeoutMs.toInt()
+            preferences[speedQuietThresholdKey] = config.speedQuietThresholdCmPerSec
+            preferences[speedQuietDurationKey] = config.speedQuietDurationMs.toInt()
             preferences[yawTargetKey] = config.yawTargetDegPerSec
             preferences[yawKpKey] = config.yawKpCommandPerDegPerSec
             preferences[wheelDiameterKey] = config.wheelDiameterMm

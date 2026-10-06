@@ -1178,6 +1178,24 @@ private fun BalanceTuningCard(
     ParameterSlider("Timeout retour vitesse (ms)", draft.speedFeedbackTimeoutMs.toFloat(), 40f..500f, 91, liveEditable) {
         change(draft.copy(speedFeedbackTimeoutMs = it.toLong()))
     }
+    ParameterSlider(
+        "Seuil vitesse repos (cm/s)",
+        draft.speedQuietThresholdCmPerSec,
+        0.05f..10f,
+        199,
+        liveEditable,
+    ) {
+        change(draft.copy(speedQuietThresholdCmPerSec = it.toDouble()))
+    }
+    ParameterSlider(
+        "Durée sous le seuil (ms)",
+        draft.speedQuietDurationMs.toFloat(),
+        100f..5000f,
+        98,
+        liveEditable,
+    ) {
+        change(draft.copy(speedQuietDurationMs = it.toLong()))
+    }
     ParameterSlider("Consigne rotation (°/s)", draft.yawTargetDegPerSec, -360f..360f, 143, liveEditable) {
         change(draft.copy(yawTargetDegPerSec = it.toDouble()))
     }
@@ -1272,10 +1290,17 @@ private fun BalanceTuningCard(
     Text(
         "Boucle ${number(speedLoop.loopRateHz)} Hz · retour ${number(speedLoop.feedbackRateHz)} Hz · " +
             "erreur ${number(speedLoop.errorCmPerSec)} cm/s · correction ${number(speedLoop.correctionDeg)}° · " +
-            "cible PD ${number(speedLoop.effectiveTargetDeg)}°" +
-            if (!speedLoop.enabled) " · DÉSACTIVÉE" else if (speedLoop.stale) {
+            "cible PD ${number(speedLoop.effectiveTargetDeg)}° · auto-trim ${speedLoop.autoTrimState}" +
+            (if (speedLoop.autoTrimState == "BRAKING") {
+                " (${number(speedLoop.restTrimDeg)}° mémorisés)"
+            } else if (speedLoop.autoTrimState == "YAW_SETTLING") {
+                " (${number(speedLoop.settledDurationSec)} s après yaw)"
+            } else if (speedLoop.autoTrimState == "SETTLED") {
+                " (${number(speedLoop.settledDurationSec)} s silencieux)"
+            } else "") +
+            (if (!speedLoop.enabled) " · DÉSACTIVÉE" else if (speedLoop.stale) {
                 " · RETOUR PÉRIMÉ (cible gelée)"
-            } else if (speedLoop.saturated) " · CIBLE SATURÉE" else "",
+            } else if (speedLoop.saturated) " · CIBLE SATURÉE" else ""),
         style = MaterialTheme.typography.bodySmall,
         color = if (speedLoop.enabled && speedLoop.stale) {
             MaterialTheme.colorScheme.error

@@ -292,9 +292,24 @@ L'application DOIT fournir au minimum les préréglages suivants :
 - **VEL-008 —** La boucle DOIT fonctionner à 50 Hz par défaut, avec une cadence
   réglable de 5 à 100 Hz. Une cadence supérieure à celle du retour moteur PEUT
   réutiliser la dernière paire fraîche sans refiltrer deux fois la même mesure.
-- **VEL-009 —** Une paire de vitesses périmée DOIT remettre l'auto-trim à zéro
-  et ramener progressivement la cible vers le trim. Avant la première paire
-  valide, la cible vaut le trim borné.
+- **VEL-008a —** La reprise de l'apprentissage au repos DOIT utiliser
+  `abs(vitesse_moyenne_filtrée) < seuil`, avec un seuil configurable (0,5 cm/s
+  par défaut) et une durée continue configurable (700 ms par défaut). La
+  vitesse testée est la moyenne des deux roues, et non chaque roue séparément.
+- **VEL-008b —** Lors du retour de la consigne vitesse vers zéro, l'intégrale
+  de déplacement DOIT être transférée sans saut vers le checkpoint de repos,
+  proportionnellement à la consigne vitesse effectivement appliquée. Aucune
+  intégration ne doit être effectuée pendant ce transfert.
+- **VEL-008c —** Une manœuvre DOIT être considérée active si la consigne de
+  translation ou la consigne de rotation est non nulle. Un yaw pur DOIT laisser
+  l'intégrateur de vitesse évoluer pour compenser la vitesse longitudinale
+  parasite induite par la rotation ; à sa fin, il DOIT conserver cette valeur
+  pendant la stabilisation et ne DOIT PAS appliquer le transfert du checkpoint
+  réservé à une translation.
+- **VEL-009 —** Une paire de vitesses périmée NE DOIT PAS effacer l'auto-trim
+  appris. La dernière cible est tenue brièvement puis ramenée progressivement
+  vers le checkpoint de repos. Avant la première paire valide, la cible vaut le
+  trim borné.
 - **VEL-010 —** La consigne, `Kev`, `Ki`, les limites, la pente, l'alpha, la
   cadence et le timeout DOIVENT être modifiables en direct pendant
   l'équilibrage. Le diamètre de roue et le rapport de transmission exigent un

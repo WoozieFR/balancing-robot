@@ -263,6 +263,8 @@ data class RobotConfig(
     val speedAbsoluteAngleLimitDeg: Double = 15.0,
     val speedTargetSlewRateDegPerSec: Double = 30.0,
     val speedFeedbackTimeoutMs: Long = 100,
+    val speedQuietThresholdCmPerSec: Double = 0.5,
+    val speedQuietDurationMs: Long = 700,
     val yawTargetDegPerSec: Double = 0.0,
     val yawKpCommandPerDegPerSec: Double = 1.0,
     val wheelDiameterMm: Double = 40.0,
@@ -548,12 +550,30 @@ angle_target = slew(clamp(targetDeg + correction,
 met à jour que lorsque le numéro de séquence de la paire change. Le calcul de
 l'angle s'exécute à `speedLoopRateHz`, 50 Hz par défaut, sur le thread IMU ; il
 n'effectue aucune I/O. La correction est bornée autour du trim, puis la cible
-est limitée dans une enveloppe absolue et par un limiteur de pente. `Ki` apprend
-un auto-trim persistant avec anti-windup. Si la paire dépasse
-`speedFeedbackTimeoutMs`, l'intégrateur est remis à zéro et la cible revient
-progressivement vers le trim au lieu de rester gelée. Une récupération fraîche
-réinitialise l'EMA à la mesure courante afin d'éviter un transitoire fondé sur
-une ancienne vitesse.
+est limitée dans une enveloppe absolue et par un limiteur de pente. La condition
+de repos utilise `abs(v_filtered) < speedQuietThresholdCmPerSec` sur la moyenne
+filtrée des deux roues, pendant `speedQuietDurationMs` sans interruption. `Ki` apprend
+un auto-trim persistant avec anti-windup. Le checkpoint de repos est mémorisé
+au début d'un déplacement ; pendant le déplacement l'intégrateur reste libre.
+Lors du relâchement, la valeur intégrale de déplacement est transférée
+progressivement vers le checkpoint en proportion de la consigne vitesse
+effectivement rampée. Si `I_release` est la valeur avant le relâchement et
+`v_release` la consigne appliquée précédente, le transfert suit
+`I = I_rest + clamp(abs(v_applied) / abs(v_release), 0, 1) × (I_release - I_rest)`;
+aucune intégration n'est effectuée pendant ce transfert.
+La manœuvre active est définie par `abs(speedTargetCmPerSec) > ε` ou
+`abs(yawTargetDegPerSec) > ε`. Le checkpoint reste donc protégé pendant une
+translation comme pendant un yaw pur, tandis que l'intégrateur courant peut
+évoluer dans les deux cas. Lorsqu'une translation est relâchée, la valeur
+intégrale de déplacement est transférée vers le checkpoint comme décrit
+ci-dessus. Lorsqu'un yaw pur est relâché, aucun transfert n'est appliqué :
+l'intégrale courante est conservée dans l'état `YAW_SETTLING` jusqu'à ce que la
+vitesse moyenne filtrée, le gyro de tangage et le gyro Z restent faibles pendant
+la durée configurée ; l'état `SETTLED` reprend alors l'apprentissage du trim.
+Une paire périmée ne doit pas effacer
+l'intégrateur appris : la dernière cible est tenue brièvement puis revient
+progressivement vers le checkpoint. Une récupération fraîche réinitialise l'EMA
+à la mesure courante afin d'éviter un transitoire fondé sur une ancienne vitesse.
 
 ### 8.5 Boucle de rotation différentielle
 
