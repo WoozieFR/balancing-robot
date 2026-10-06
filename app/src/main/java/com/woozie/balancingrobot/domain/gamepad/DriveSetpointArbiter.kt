@@ -64,12 +64,17 @@ class DriveSetpointArbiter(
     fun resolve(nowNs: Long, parameters: ParameterDriveSetpoint): EffectiveDriveSetpoint {
         if (!enabled) {
             return if (takeoverLatched) {
-                EffectiveDriveSetpoint(0.0, 0.0, DriveCommandSource.NEUTRAL, GamepadNeutralReason.DISABLED)
+                EffectiveDriveSetpoint(
+                    speedTargetCmPerSec = 0.0,
+                    yawTargetDegPerSec = 0.0,
+                    source = DriveCommandSource.NEUTRAL,
+                    neutralReason = GamepadNeutralReason.DISABLED,
+                )
             } else {
                 EffectiveDriveSetpoint(
-                    parameters.speedTargetCmPerSec,
-                    parameters.yawTargetDegPerSec,
-                    DriveCommandSource.PARAMETERS,
+                    speedTargetCmPerSec = parameters.speedTargetCmPerSec,
+                    yawTargetDegPerSec = parameters.yawTargetDegPerSec,
+                    source = DriveCommandSource.PARAMETERS,
                 )
             }
         }
@@ -81,9 +86,10 @@ class DriveSetpointArbiter(
         if (ageNs > timeoutMs * 1_000_000L) return neutral(GamepadNeutralReason.TIMEOUT, ageMs)
         if (!command.deadmanHeld) return neutral(GamepadNeutralReason.DEADMAN_RELEASED, ageMs, command)
         return EffectiveDriveSetpoint(
-            command.speedTargetCmPerSec,
-            command.yawTargetDegPerSec,
-            DriveCommandSource.GAMEPAD,
+            speedTargetCmPerSec = 0.0,
+            yawTargetDegPerSec = command.yawTargetDegPerSec,
+            forwardNormalized = command.forwardNormalized.coerceIn(-1.0, 1.0),
+            source = DriveCommandSource.GAMEPAD,
             ageMs = ageMs,
             sequence = command.sequence,
             deadmanHeld = true,
@@ -108,6 +114,7 @@ class DriveSetpointArbiter(
     ) = EffectiveDriveSetpoint(
         speedTargetCmPerSec = 0.0,
         yawTargetDegPerSec = 0.0,
+        forwardNormalized = 0.0,
         source = DriveCommandSource.NEUTRAL,
         neutralReason = reason,
         ageMs = ageMs,
@@ -116,4 +123,3 @@ class DriveSetpointArbiter(
         precisionHeld = command?.precisionHeld == true,
     )
 }
-

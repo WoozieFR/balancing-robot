@@ -319,7 +319,7 @@ class MainActivity : ComponentActivity() {
                         deviceId = deviceId,
                         sequence = ++gamepadSequence,
                         timestampNs = SystemClock.elapsedRealtimeNanos(),
-                        speedTargetCmPerSec = speed.target,
+                        forwardNormalized = speed.target,
                         yawTargetDegPerSec = yaw.target,
                         deadmanHeld = gamepadInput.deadmanHeld,
                         precisionHeld = gamepadInput.precisionHeld,
@@ -1000,9 +1000,10 @@ private fun GamepadCard(
         color = if (modeEnabled) MaterialTheme.colorScheme.primary else MaterialTheme.colorScheme.onSurface,
     )
     state.lastEvent?.let { Text(it, style = MaterialTheme.typography.bodySmall) }
-    ParameterSlider("Vitesse maximale (cm/s)", config.maxSpeedCmPerSec, 0f..20f, 99, true) {
-        onConfigChange(config.copy(maxSpeedCmPerSec = it.toDouble()))
-    }
+    Text(
+        "Stick avant/arrière : commande normalisée → inclinaison maximale du contrôleur",
+        style = MaterialTheme.typography.bodySmall,
+    )
     ParameterSlider("Rotation maximale (°/s)", config.maxYawDegPerSec, 0f..360f, 119, true) {
         onConfigChange(config.copy(maxYawDegPerSec = it.toDouble()))
     }
@@ -1315,7 +1316,7 @@ private fun BalanceTuningCard(
             (if (speedLoop.autoTrimState == "WAIT_REST") {
                 " (${number(speedLoop.settledDurationSec)} s de qualification)"
             } else if (speedLoop.autoTrimState == "REST") {
-                " (${number(speedLoop.autoTrimDeg)}° appris)"
+                " (${number(speedLoop.autoTrimDeg)}° appris${if (speedLoop.autoTrimSaturated) ", limite atteinte" else ""})"
             } else "") +
             (if (!speedLoop.enabled) " · DÉSACTIVÉE" else if (speedLoop.stale) {
                 " · RETOUR PÉRIMÉ (cible gelée)"

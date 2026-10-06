@@ -148,7 +148,7 @@ const renderDiagnostics = (diagnostics) => {
   const autoTrimDetail = autoTrimState === 'WAIT_REST'
     ? ` · qualification ${number(diagnostics.speedSettledDurationSec, ' s')}`
     : autoTrimState === 'REST'
-      ? ` · apprentissage ${number(diagnostics.speedAutoTrimDeg, '°')}`
+      ? ` · apprentissage ${number(diagnostics.speedAutoTrimDeg, '°')}${diagnostics.speedAutoTrimSaturated ? ' · limite atteinte' : ''}`
       : '';
   const speedFeedback = $('speed-feedback-state');
   if (speedFeedback && diagnostics.speedLoopEnabled && !diagnostics.speedFeedbackStale) {

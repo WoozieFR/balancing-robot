@@ -30,6 +30,7 @@ data class SpeedLoopDiagnosticState(
     val appliedLeanDeg: Double = 0.0,
     val brakeCorrectionDeg: Double = 0.0,
     val userCommandActive: Boolean = false,
+    val autoTrimSaturated: Boolean = false,
     val saturated: Boolean = false,
     val slewLimited: Boolean = false,
 )

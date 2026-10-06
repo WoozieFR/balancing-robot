@@ -425,6 +425,7 @@ class RobotControlService : Service() {
                 focused = false,
                 source = DriveCommandSource.NEUTRAL,
                 neutralReason = GamepadNeutralReason.DISABLED,
+                normalizedSpeed = 0.0,
                 effectiveSpeedTargetCmPerSec = 0.0,
                 effectiveYawTargetDegPerSec = 0.0,
                 deadmanHeld = false,
@@ -442,6 +443,7 @@ class RobotControlService : Service() {
             focused = true,
             source = DriveCommandSource.NEUTRAL,
             neutralReason = GamepadNeutralReason.TIMEOUT,
+            normalizedSpeed = 0.0,
             lastEvent = "Mode manette activé : maintenir R1 pour commander",
         )) }
         return true
@@ -461,7 +463,10 @@ class RobotControlService : Service() {
                 lastCommandAgeMs = 0.0,
                 deadmanHeld = command.deadmanHeld,
                 precisionHeld = command.precisionHeld,
-                effectiveSpeedTargetCmPerSec = if (command.deadmanHeld) command.speedTargetCmPerSec else 0.0,
+                normalizedSpeed = if (command.deadmanHeld) command.forwardNormalized else 0.0,
+                effectiveSpeedTargetCmPerSec = if (command.deadmanHeld) {
+                    command.forwardNormalized * activeConfig.speedTargetLimitCmPerSec
+                } else 0.0,
                 effectiveYawTargetDegPerSec = if (command.deadmanHeld) command.yawTargetDegPerSec else 0.0,
                 lastEvent = if (command.deadmanHeld) "Commande manette reçue" else "Deadman relâché",
             )) }
@@ -475,6 +480,7 @@ class RobotControlService : Service() {
             connected = false,
             source = DriveCommandSource.NEUTRAL,
             neutralReason = reason,
+            normalizedSpeed = 0.0,
             effectiveSpeedTargetCmPerSec = 0.0,
             effectiveYawTargetDegPerSec = 0.0,
             deadmanHeld = false,
@@ -489,6 +495,7 @@ class RobotControlService : Service() {
             focused = focused,
             source = if (focused) it.gamepad.source else DriveCommandSource.NEUTRAL,
             neutralReason = if (focused) it.gamepad.neutralReason else GamepadNeutralReason.FOCUS_LOST,
+            normalizedSpeed = if (focused) it.gamepad.normalizedSpeed else 0.0,
             effectiveSpeedTargetCmPerSec = if (focused) it.gamepad.effectiveSpeedTargetCmPerSec else 0.0,
             effectiveYawTargetDegPerSec = if (focused) it.gamepad.effectiveYawTargetDegPerSec else 0.0,
         )) }
@@ -1061,7 +1068,10 @@ class RobotControlService : Service() {
                 source = driveSetpoint.source,
                 neutralReason = driveSetpoint.neutralReason,
                 lastCommandAgeMs = driveSetpoint.ageMs,
-                effectiveSpeedTargetCmPerSec = driveSetpoint.speedTargetCmPerSec,
+                normalizedSpeed = driveSetpoint.forwardNormalized ?: 0.0,
+                effectiveSpeedTargetCmPerSec = driveSetpoint.forwardNormalized?.let {
+                    it * activeConfig.speedTargetLimitCmPerSec
+                } ?: driveSetpoint.speedTargetCmPerSec,
                 effectiveYawTargetDegPerSec = driveSetpoint.yawTargetDegPerSec,
                 lastSequence = driveSetpoint.sequence,
                 deadmanHeld = driveSetpoint.deadmanHeld,
@@ -1069,11 +1079,14 @@ class RobotControlService : Service() {
             ))
         }
         val speedOutput = updateSpeedLoop(
-            receivedTimestampNs,
-            driveSetpoint.speedTargetCmPerSec,
-            gyroDps,
-            driveSetpoint.yawTargetDegPerSec,
-            gyroZDps ?: 0.0,
+            nowNs = receivedTimestampNs,
+            targetCmPerSec = driveSetpoint.forwardNormalized?.let {
+                it * activeConfig.speedTargetLimitCmPerSec
+            } ?: driveSetpoint.speedTargetCmPerSec,
+            pitchRateDegPerSec = gyroDps,
+            yawTargetDegPerSec = driveSetpoint.yawTargetDegPerSec,
+            yawRateDegPerSec = gyroZDps ?: 0.0,
+            forwardNormalized = driveSetpoint.forwardNormalized,
         )
         val step = imuRuntime?.step(
             accel!!,
@@ -1166,6 +1179,7 @@ class RobotControlService : Service() {
         pitchRateDegPerSec: Double = 0.0,
         yawTargetDegPerSec: Double = activeConfig.yawTargetDegPerSec,
         yawRateDegPerSec: Double = 0.0,
+        forwardNormalized: Double? = null,
     ): VelocityLoopOutput {
         val snapshot = motorScheduler?.velocitySnapshot()
         val feedback = if (
@@ -1192,6 +1206,9 @@ class RobotControlService : Service() {
                 rightTimestampNs = snapshot.timestampsNs[1],
             )
         } else null
+        velocityOuterLoop.setAutoTrimLearningEnabled(
+            _state.value.motors.armState == MotorArmState.BALANCE_ARMED,
+        )
         val output = velocityOuterLoop.step(
             nowNs,
             feedback,
@@ -1199,6 +1216,7 @@ class RobotControlService : Service() {
             pitchRateDegPerSec,
             yawTargetDegPerSec,
             yawRateDegPerSec,
+            forwardNormalized,
         )
         if (output.updated) {
             speedLoopActualRateHz = speedLoopRateMeter.record(nowNs).frequencyHz
@@ -1233,6 +1251,7 @@ class RobotControlService : Service() {
                     appliedLeanDeg = output.appliedLeanDeg,
                     brakeCorrectionDeg = output.brakeCorrectionDeg,
                     userCommandActive = output.userCommandActive,
+                    autoTrimSaturated = output.autoTrimSaturated,
                     saturated = output.saturated,
                     slewLimited = output.slewLimited,
                 ))
@@ -1309,6 +1328,7 @@ class RobotControlService : Service() {
                 speedAutoTrimState = speedOutput?.autoTrimState,
                 speedSettledDurationSec = speedOutput?.settledDurationSec,
                 speedQuiet = speedOutput?.quiet,
+                speedAutoTrimSaturated = speedOutput?.autoTrimSaturated,
                 speedTargetSlewLimited = speedOutput?.slewLimited,
                 speedStale = speedOutput?.stale,
                 speedTargetSaturated = speedOutput?.saturated,
@@ -1319,6 +1339,7 @@ class RobotControlService : Service() {
                 gamepadCommandAgeMs = _state.value.gamepad.lastCommandAgeMs,
                 gamepadSequence = _state.value.gamepad.lastSequence,
                 gamepadDeadmanHeld = _state.value.gamepad.deadmanHeld,
+                gamepadNormalizedSpeed = _state.value.gamepad.normalizedSpeed,
                 gamepadSpeedTargetCmPerSec = _state.value.gamepad.effectiveSpeedTargetCmPerSec,
                 gamepadYawTargetDegPerSec = _state.value.gamepad.effectiveYawTargetDegPerSec,
             ),
@@ -1387,6 +1408,7 @@ class RobotControlService : Service() {
             gamepad.lastCommandAgeMs?.let { put("gamepadCommandAgeMs", it) }
             put("gamepadDeadmanHeld", gamepad.deadmanHeld)
             put("gamepadPrecisionHeld", gamepad.precisionHeld)
+            put("gamepadNormalizedSpeed", gamepad.normalizedSpeed)
             put("gamepadEffectiveSpeedTargetCmPerSec", gamepad.effectiveSpeedTargetCmPerSec)
             put("gamepadEffectiveYawTargetDegPerSec", gamepad.effectiveYawTargetDegPerSec)
             gamepad.lastEvent?.let { put("gamepadLastEvent", it) }
@@ -1445,6 +1467,7 @@ class RobotControlService : Service() {
             put("speedAppliedLeanDeg", speed.appliedLeanDeg)
             put("speedBrakeCorrectionDeg", speed.brakeCorrectionDeg)
             put("speedUserCommandActive", speed.userCommandActive)
+            put("speedAutoTrimSaturated", speed.autoTrimSaturated)
             put("speedEffectiveTargetDeg", speed.effectiveTargetDeg)
             put("speedTargetSaturated", speed.saturated)
             put("speedTargetSlewLimited", speed.slewLimited)

@@ -35,7 +35,8 @@ data class GamepadDriveCommand(
     val deviceId: Int,
     val sequence: Long,
     val timestampNs: Long,
-    val speedTargetCmPerSec: Double,
+    /** Normalized forward/backward command in [-1, 1]. */
+    val forwardNormalized: Double,
     val yawTargetDegPerSec: Double,
     val deadmanHeld: Boolean,
     val precisionHeld: Boolean,
@@ -44,6 +45,8 @@ data class GamepadDriveCommand(
 data class EffectiveDriveSetpoint(
     val speedTargetCmPerSec: Double,
     val yawTargetDegPerSec: Double,
+    /** Non-null only when the active source is the gamepad. */
+    val forwardNormalized: Double? = null,
     val source: DriveCommandSource,
     val neutralReason: GamepadNeutralReason = GamepadNeutralReason.NONE,
     val ageMs: Double? = null,
@@ -56,4 +59,3 @@ data class GamepadAxisOutput(
     val normalized: Double,
     val target: Double,
 )
-

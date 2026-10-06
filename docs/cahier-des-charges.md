@@ -288,6 +288,10 @@ L'application DOIT fournir au minimum les préréglages suivants :
 - **VEL-006 —** L'inclinaison joystick DOIT être calculée comme
   `joystick / limite × joystickMaxLeanDeg`, avec bande morte et pente
   maximale réglables (3° et 30°/s par défaut).
+- **VEL-006a —** La manette DOIT fournir un axe avant/arrière normalisé dans
+  `[-1,+1]`. Elle NE DOIT PAS appliquer une seconde échelle en cm/s avant le
+  calcul de l'inclinaison ; l'entrée Web peut conserver l'unité cm/s pour
+  compatibilité.
 - **VEL-007 —** La cible finale DOIT être la somme de `targetDeg`,
   `autoTrim`, de l'inclinaison joystick et, si activé sans commande utilisateur,
   du freinage proportionnel `clamp(-brakeKp × vitesse, ±brakeLimit)`.
@@ -310,10 +314,20 @@ L'application DOIT fournir au minimum les préréglages suivants :
   paire de vitesses fraîche, selon `autoTrim += Ki × (-vitesse_filtrée) × dt`,
   avec une limite absolue configurable. Il ne doit pas exister de second
   intégrateur de déplacement.
+- **VEL-008d —** L'apprentissage DOIT être désactivé hors `BALANCE_ARMED`.
+  Chaque nouvel armement DOIT démarrer une session `REST` neuve et réinitialiser
+  ses horodatages de feedback.
+- **VEL-008e —** L'auto-trim DOIT respecter l'enveloppe absolue de la cible en
+  plus de sa limite propre. Une intégration qui pousserait davantage vers une
+  saturation DOIT être refusée et signalée par `autoTrimSaturated`.
+- **VEL-008f —** Le passage de `WAIT_REST` à `REST` DOIT également exiger que
+  l'inclinaison joystick appliquée soit revenue à moins de `0,1°`.
 - **VEL-009 —** Une paire de vitesses périmée NE DOIT PAS effacer l'auto-trim
   appris ni l'intégrer sur l'intervalle perdu. Le premier échantillon frais après
-  récupération DOIT réinitialiser l'EMA sur la mesure courante. Avant la première
-  paire valide, l'état initial `REST` autorise l'apprentissage.
+  récupération DOIT réinitialiser l'EMA sur la mesure courante. Le freinage
+  actif DOIT décroître vers zéro à pente limitée pendant cette période. Avant la
+  première paire valide d'une session armée, l'état initial `REST` autorise
+  l'apprentissage.
 - **VEL-010 —** La commande joystick, les limites d'inclinaison et de freinage,
   `Ki`, l'alpha, la cadence, le seuil, la durée de repos et le timeout DOIVENT
   être modifiables en direct pendant l'équilibrage. Le diamètre de roue et le

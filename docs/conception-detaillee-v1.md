@@ -565,6 +565,11 @@ leur limiteur de pente. La consigne utilisateur est active si
 `abs(speedTargetCmPerSec) > joystickDeadbandCmPerSec` ou si la consigne yaw
 dépasse sa bande morte.
 
+La manette ne transmet pas une seconde vitesse physique : son axe avant/arrière
+est normalisé dans `[-1, +1]`, puis converti directement en
+`forwardNormalized × joystickMaxLeanDeg`. La page Web conserve son entrée en
+cm/s pour compatibilité d'usage et celle-ci est normalisée par la boucle.
+
 L'état est l'un de `DRIVING`, `WAIT_REST` ou `REST` :
 
 - `DRIVING` : translation, yaw seul, ou les deux ; `autoTrim` est figé et seul
@@ -591,6 +596,26 @@ L'apprentissage ne s'effectue qu'une fois par nouvelle séquence de télémétri
 jamais sur une paire périmée. Une paire périmée conserve le dernier auto-trim
 et ne remet pas sa valeur à zéro ; le premier échantillon après récupération ne
 intègre pas l'intervalle perdu et réinitialise l'EMA sur la mesure courante.
+L'apprentissage est explicitement autorisé seulement pendant une session
+`BALANCE_ARMED`; l'armement démarre une session neuve (`REST`, auto-trim et
+horodatages de feedback réinitialisés). Un robot manipulé avant armement ne peut
+donc pas modifier son trim.
+
+L'intégration applique un anti-windup à la fois sur la limite d'auto-trim et sur
+l'enveloppe absolue de cible. Avec `base = targetDeg + lean + brake`, la valeur
+persistante est contrainte au minimum par :
+
+```text
+max(-speedTargetAngleLimitDeg, -speedAbsoluteAngleLimitDeg - base)
+min(+speedTargetAngleLimitDeg, +speedAbsoluteAngleLimitDeg - base)
+```
+
+Le diagnostic `speedAutoTrimSaturated` est journalisé lorsque l'une de ces
+limites empêche l'intégration de progresser. La qualification `WAIT_REST` exige
+également `abs(appliedLeanDeg) < 0,1°`, afin qu'un ancien mouvement de joystick
+soit effectivement revenu à zéro. En cas de retour vitesse périmé, le dernier
+freinage est décroissé vers zéro à pente limitée au lieu de disparaître d'un
+coup.
 Au démarrage, l'état est `REST` pour permettre l'apprentissage initial avant la
 première commande utilisateur. Les paramètres historiques `speedKev...` et
 `speedTargetSlewRateCmPerSec` sont conservés uniquement pour compatibilité de

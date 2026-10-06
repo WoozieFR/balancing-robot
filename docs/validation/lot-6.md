@@ -12,11 +12,15 @@
   roues de 40 mm et rapport direct 1,0 par défaut ;
 - moyenne des roues, EMA réglable et boucle à 50 Hz par défaut ;
 - commande joystick directe vers une inclinaison limitée et soumise à un slew ;
+- axe manette avant/arrière normalisé, sans double échelle vitesse → lean ;
 - états `DRIVING`, `WAIT_REST` et `REST`, avec auto-trim `Ki × (-vitesse) × dt`
   appris uniquement au repos ;
+- apprentissage explicitement autorisé seulement pendant `BALANCE_ARMED` ;
+- anti-windup sur l'enveloppe absolue et indicateur de saturation auto-trim ;
 - freinage proportionnel optionnel, limite absolue et limiteurs de pente ;
-- conservation de l'auto-trim sur retour périmé, sans intégration de l'intervalle
-  perdu, puis réinitialisation propre de l'EMA lors de la reprise ;
+- garde sur le lean résiduel avant passage à `REST` ;
+- conservation de l'auto-trim sur retour périmé, freinage décroissant sans saut,
+  sans intégration de l'intervalle perdu, puis réinitialisation propre de l'EMA ;
 - activation, gains, limites, seuil, durée de repos, cadence et timeout
   modifiables en direct ;
 - réglages et diagnostics sur l'IHM Android et la page Web ;
@@ -61,4 +65,4 @@ Aucune stabilité au sol ni cadence USB réelle n'est revendiquée tant que cett
 procédure n'a pas été réalisée sur le robot.
 
 APK : `app/build/outputs/apk/debug/app-debug.apk`
-SHA-256 : `c9fb535f1a957ed3d1af4d378c2b728714a73345d4eb585340dc1ec9b4400145`
+SHA-256 : `e6f86bd974b893162ca3c16ca735234682359bab54aad1f68183ef5ee9b56291`

@@ -33,6 +33,20 @@ class VelocityOuterLoopTest {
     }
 
     @Test
+    fun normalizedGamepadFullStickReachesConfiguredMaximumLean() {
+        val loop = VelocityOuterLoop(config(joystickMaxLeanDeg = 3.0, joystickLeanSlewRateDegPerSec = 180.0))
+        val output = loop.step(
+            1_000_000_000L,
+            feedback(1, 0, 0, 995_000_000L),
+            targetCmPerSec = 0.0,
+            forwardNormalized = 1.0,
+        )
+
+        assertEquals(3.0, output.requestedLeanDeg, 1e-9)
+        assertEquals(10.0, output.targetCmPerSec, 1e-9)
+    }
+
+    @Test
     fun commandDeadbandAndYawBothEnterDriving() {
         val loop = VelocityOuterLoop(config(joystickDeadbandCmPerSec = 0.5))
         val belowDeadband = loop.step(1_000_000_000L, feedback(1, 0, 0, 995_000_000L), targetCmPerSec = 0.2)
@@ -84,6 +98,20 @@ class VelocityOuterLoopTest {
     }
 
     @Test
+    fun autoTrimIsDisabledBeforeBalanceSessionAndResetsAtSessionStart() {
+        val loop = VelocityOuterLoop(config(speedIntegralGainDegPerCmPerSecSec = 1.0, speedFilterAlpha = 1.0))
+        loop.setAutoTrimLearningEnabled(false)
+        loop.step(1_000_000_000L, feedback(1, 0, 0, 995_000_000L), targetCmPerSec = 0.0)
+        val disarmed = loop.step(1_020_000_000L, feedback(2, 1_000, 1_000, 1_015_000_000L), targetCmPerSec = 0.0)
+        assertEquals(0.0, disarmed.autoTrimDeg, 1e-9)
+
+        loop.setAutoTrimLearningEnabled(true)
+        loop.step(2_000_000_000L, feedback(3, 0, 0, 1_995_000_000L), targetCmPerSec = 0.0)
+        val armed = loop.step(2_020_000_000L, feedback(4, 1_000, 1_000, 2_015_000_000L), targetCmPerSec = 0.0)
+        assertTrue(armed.autoTrimDeg < 0.0)
+    }
+
+    @Test
     fun restKeepsLearningAfterAChargeCausesDrift() {
         val loop = VelocityOuterLoop(config(speedIntegralGainDegPerCmPerSecSec = 1.0, speedFilterAlpha = 1.0))
         loop.step(1_000_000_000L, feedback(1, 0, 0, 995_000_000L), targetCmPerSec = 0.0)
@@ -114,6 +142,56 @@ class VelocityOuterLoopTest {
     }
 
     @Test
+    fun autoTrimIsAntiWindupBoundedByAbsoluteTargetEnvelope() {
+        val loop = VelocityOuterLoop(config(
+            targetDeg = 8.0,
+            speedAbsoluteAngleLimitDeg = 15.0,
+            speedIntegralGainDegPerCmPerSecSec = 2.0,
+            speedFilterAlpha = 1.0,
+        ))
+        loop.step(1_000_000_000L, feedback(1, 0, 0, 995_000_000L), targetCmPerSec = 0.0)
+        var output = loop.step(1_500_000_000L, feedback(2, -1_000, -1_000, 1_495_000_000L), targetCmPerSec = 0.0)
+        output = loop.step(2_000_000_000L, feedback(3, -1_000, -1_000, 1_995_000_000L), targetCmPerSec = 0.0)
+        output = loop.step(2_500_000_000L, feedback(4, -1_000, -1_000, 2_495_000_000L), targetCmPerSec = 0.0)
+        output = loop.step(3_000_000_000L, feedback(5, -1_000, -1_000, 2_995_000_000L), targetCmPerSec = 0.0)
+
+        assertEquals(7.0, output.autoTrimDeg, 1e-9)
+        assertTrue(output.autoTrimSaturated)
+        assertTrue(output.effectiveTargetDeg <= 15.0)
+    }
+
+    @Test
+    fun waitRestCannotQualifyWhileAppliedLeanIsStillMovingToZero() {
+        val loop = VelocityOuterLoop(config(
+            joystickLeanSlewRateDegPerSec = 1.0,
+            speedQuietDurationMs = 100,
+            speedFilterAlpha = 1.0,
+        ))
+        var nowNs = 1_000_000_000L
+        var sequence = 1L
+        loop.step(nowNs, feedback(sequence, 0, 0, nowNs - 5_000_000L), targetCmPerSec = 10.0)
+        repeat(20) {
+            nowNs += 20_000_000L
+            sequence += 1
+            loop.step(nowNs, feedback(sequence, 0, 0, nowNs - 5_000_000L), targetCmPerSec = 10.0)
+        }
+        var output = loop.step(nowNs + 20_000_000L, feedback(sequence + 1, 0, 0, nowNs + 15_000_000L), targetCmPerSec = 0.0)
+        assertEquals("WAIT_REST", output.autoTrimState)
+        repeat(5) {
+            nowNs += 20_000_000L
+            sequence += 2
+            output = loop.step(nowNs, feedback(sequence, 0, 0, nowNs - 5_000_000L), targetCmPerSec = 0.0)
+        }
+        assertEquals("WAIT_REST", output.autoTrimState)
+        repeat(30) {
+            nowNs += 20_000_000L
+            sequence += 1
+            output = loop.step(nowNs, feedback(sequence, 0, 0, nowNs - 5_000_000L), targetCmPerSec = 0.0)
+        }
+        assertEquals("REST", output.autoTrimState)
+    }
+
+    @Test
     fun brakingIsProportionalAndDoesNotCreateAnIntegral() {
         val loop = VelocityOuterLoop(config(brakeKpDegPerCmPerSec = 0.5, brakeLimitDeg = 1.0))
         val output = loop.step(1_000_000_000L, feedback(1, 1_000, 1_000, 995_000_000L), targetCmPerSec = 0.0)
@@ -121,6 +199,24 @@ class VelocityOuterLoopTest {
         assertEquals(-1.0, output.brakeCorrectionDeg, 1e-9)
         assertEquals(0.0, output.autoTrimDeg, 1e-9)
         assertFalse(output.userCommandActive)
+    }
+
+    @Test
+    fun staleFeedbackDecaysTheLastBrakeInsteadOfDroppingItInstantly() {
+        val loop = VelocityOuterLoop(config(
+            brakeKpDegPerCmPerSec = 0.5,
+            brakeLimitDeg = 2.0,
+            speedFilterAlpha = 1.0,
+            speedFeedbackTimeoutMs = 40,
+        ))
+        val fresh = loop.step(1_000_000_000L, feedback(1, 1_000, 1_000, 995_000_000L), targetCmPerSec = 0.0)
+        val stale = loop.step(1_060_000_000L, feedback(1, 1_000, 1_000, 995_000_000L), targetCmPerSec = 0.0)
+
+        val expectedBrake = -0.5 * stepsPerSecondToCmPerSecond(1_000, 40.0, 1.0)
+        assertEquals(expectedBrake, fresh.brakeCorrectionDeg, 1e-9)
+        assertTrue(stale.stale)
+        assertTrue(stale.brakeCorrectionDeg < 0.0)
+        assertTrue(stale.brakeCorrectionDeg > fresh.brakeCorrectionDeg)
     }
 
     @Test

@@ -47,7 +47,9 @@ fun gamepadSetpoints(
         responseExponent = config.responseExponent,
         sign = config.yawSign,
     )
-    return GamepadAxisOutput(speed, speed * config.maxSpeedCmPerSec * precision) to
+    // Forward/backward is deliberately kept normalized. The robot controller
+    // owns the physical lean limit; this avoids applying a second speed scale
+    // before the joystick-to-lean mapping.
+    return GamepadAxisOutput(speed, speed * precision) to
         GamepadAxisOutput(yaw, yaw * config.maxYawDegPerSec * precision)
 }
-

@@ -53,6 +53,7 @@ data class ControlLogRecord(
     val speedAutoTrimState: String? = null,
     val speedSettledDurationSec: Double? = null,
     val speedQuiet: Boolean? = null,
+    val speedAutoTrimSaturated: Boolean? = null,
     val speedTargetSlewLimited: Boolean? = null,
     val speedStale: Boolean? = null,
     val speedTargetSaturated: Boolean? = null,
@@ -63,6 +64,7 @@ data class ControlLogRecord(
     val gamepadCommandAgeMs: Double? = null,
     val gamepadSequence: Long? = null,
     val gamepadDeadmanHeld: Boolean? = null,
+    val gamepadNormalizedSpeed: Double? = null,
     val gamepadSpeedTargetCmPerSec: Double? = null,
     val gamepadYawTargetDegPerSec: Double? = null,
 )
@@ -127,10 +129,11 @@ class ControlSessionLog(private val capacity: Int = 100_000) {
                 "speed_mean_cmps,speed_filtered_cmps,speed_error_cmps,speed_correction_deg," +
                 "speed_integral_correction_deg,speed_auto_trim_deg,speed_requested_lean_deg," +
                 "speed_applied_lean_deg,speed_brake_correction_deg,speed_auto_trim_state," +
-                "speed_settled_duration_s,speed_quiet,speed_target_slew_limited,speed_stale," +
+                "speed_settled_duration_s,speed_quiet,speed_auto_trim_saturated," +
+                "speed_target_slew_limited,speed_stale," +
                 "speed_target_saturated,speed_loop_actual_hz,speed_feedback_actual_hz,arm_state,sample_status," +
                 "gamepad_source,gamepad_neutral_reason,gamepad_command_age_ms,gamepad_sequence," +
-                "gamepad_deadman_held,gamepad_speed_target_cmps,gamepad_yaw_target_dps",
+                "gamepad_deadman_held,gamepad_normalized_speed,gamepad_speed_target_cmps,gamepad_yaw_target_dps",
         )
         records.forEach { record ->
             val config = record.config
@@ -224,6 +227,7 @@ class ControlSessionLog(private val capacity: Int = 100_000) {
                 .append(record.speedAutoTrimState ?: "").append(',')
                 .appendNullable(record.speedSettledDurationSec).append(',')
                 .append(record.speedQuiet ?: "").append(',')
+                .append(record.speedAutoTrimSaturated ?: "").append(',')
                 .append(record.speedTargetSlewLimited ?: "").append(',')
                 .append(record.speedStale ?: "").append(',')
                 .append(record.speedTargetSaturated ?: "").append(',')
@@ -236,6 +240,7 @@ class ControlSessionLog(private val capacity: Int = 100_000) {
                 .appendNullable(record.gamepadCommandAgeMs).append(',')
                 .append(record.gamepadSequence ?: "").append(',')
                 .append(record.gamepadDeadmanHeld ?: "").append(',')
+                .appendNullable(record.gamepadNormalizedSpeed).append(',')
                 .appendNullable(record.gamepadSpeedTargetCmPerSec).append(',')
                 .appendNullable(record.gamepadYawTargetDegPerSec)
                 .appendLine()
