@@ -182,19 +182,80 @@ class VelocityOuterLoopTest {
             speedTargetCmPerSec = 0.0,
             speedIntegralGainDegPerCmPerSecSec = 0.0,
             speedAutoTrimGainDegPerCmPerSecSec = 0.5,
+            speedQuietDurationMs = 100,
+            speedFilterAlpha = 1.0,
         ))
         loop.step(1_000_000_000L, feedback(1, 0, 0, 995_000_000L))
-        val learned = loop.step(1_020_000_000L, feedback(2, 1_000, 1_000, 1_015_000_000L))
-        val trimAtStart = learned.autoTrimDeg
-        assertTrue(trimAtStart < 0.0)
+        val beforeRest = loop.step(1_020_000_000L, feedback(2, 0, 0, 1_015_000_000L))
+        val trimAtStart = beforeRest.autoTrimDeg
+        assertEquals(0.0, trimAtStart, 1e-9)
+
+        loop.step(1_040_000_000L, feedback(3, 0, 0, 1_035_000_000L))
+        loop.step(1_060_000_000L, feedback(4, 0, 0, 1_055_000_000L))
+        loop.step(1_080_000_000L, feedback(5, 0, 0, 1_075_000_000L))
+        loop.step(1_100_000_000L, feedback(6, 0, 0, 1_095_000_000L))
+        val rest = loop.step(1_120_000_000L, feedback(7, 0, 0, 1_115_000_000L))
+        assertEquals("REST", rest.autoTrimState)
+
+        val learned = loop.step(1_140_000_000L, feedback(8, 1_000, 1_000, 1_135_000_000L))
+        val learnedTrim = learned.autoTrimDeg
+        assertTrue(learnedTrim < 0.0)
 
         val moving = loop.step(
-            1_040_000_000L,
-            feedback(3, 1_000, 1_000, 1_035_000_000L),
+            1_160_000_000L,
+            feedback(9, 1_000, 1_000, 1_155_000_000L),
             targetCmPerSec = 5.0,
         )
-        assertEquals(trimAtStart, moving.autoTrimDeg, 1e-9)
+        assertEquals(learnedTrim, moving.autoTrimDeg, 1e-9)
         assertEquals("MANEUVER", moving.autoTrimState)
+    }
+
+    @Test
+    fun firstBalanceSessionMustSettleBeforeAutoTrimLearning() {
+        val loop = VelocityOuterLoop(config(
+            speedTargetCmPerSec = 0.0,
+            speedAutoTrimGainDegPerCmPerSecSec = 1.0,
+            speedQuietDurationMs = 100,
+            speedFilterAlpha = 1.0,
+        ))
+
+        val initial = loop.step(
+            1_000_000_000L,
+            feedback(1, 2_000, 2_000, 995_000_000L),
+        )
+        assertEquals("ACQUIRE_REST", initial.autoTrimState)
+        assertEquals(0.0, initial.autoTrimDeg, 1e-9)
+
+        val oscillating = loop.step(
+            1_020_000_000L,
+            feedback(2, 2_000, 2_000, 1_015_000_000L),
+            pitchRateDegPerSec = 10.0,
+        )
+        assertEquals("ACQUIRE_REST", oscillating.autoTrimState)
+        assertEquals(0.0, oscillating.autoTrimDeg, 1e-9)
+
+        val quiet = loop.step(
+            1_040_000_000L,
+            feedback(3, 0, 0, 1_035_000_000L),
+        )
+        assertEquals("ACQUIRE_REST", quiet.autoTrimState)
+        assertEquals(0.0, quiet.autoTrimDeg, 1e-9)
+
+        loop.step(1_060_000_000L, feedback(4, 0, 0, 1_055_000_000L))
+        loop.step(1_080_000_000L, feedback(5, 0, 0, 1_075_000_000L))
+        loop.step(1_100_000_000L, feedback(6, 0, 0, 1_095_000_000L))
+        val rest = loop.step(
+            1_120_000_000L,
+            feedback(7, 0, 0, 1_115_000_000L),
+        )
+        assertEquals("REST", rest.autoTrimState)
+
+        val loaded = loop.step(
+            1_140_000_000L,
+            feedback(8, 1_000, 1_000, 1_135_000_000L),
+        )
+        assertEquals("REST", loaded.autoTrimState)
+        assertTrue(loaded.autoTrimDeg < 0.0)
     }
 
     @Test
@@ -265,6 +326,7 @@ class VelocityOuterLoopTest {
         speedAbsoluteAngleLimitDeg: Double = 15.0,
         speedTargetSlewRateDegPerSec: Double = 30.0,
         speedFeedbackTimeoutMs: Long = 100,
+        speedQuietDurationMs: Long = 700,
     ) = RobotConfig(
         targetDeg = targetDeg,
         speedLoopEnabled = speedLoopEnabled,
@@ -279,6 +341,7 @@ class VelocityOuterLoopTest {
         speedAbsoluteAngleLimitDeg = speedAbsoluteAngleLimitDeg,
         speedTargetSlewRateDegPerSec = speedTargetSlewRateDegPerSec,
         speedFeedbackTimeoutMs = speedFeedbackTimeoutMs,
+        speedQuietDurationMs = speedQuietDurationMs,
     )
 
     private fun feedback(

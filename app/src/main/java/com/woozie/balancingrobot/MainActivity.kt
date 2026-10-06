@@ -1199,8 +1199,8 @@ private fun BalanceTuningCard(
     ParameterSlider(
         "Durée repos (ms)",
         draft.speedQuietDurationMs.toFloat(),
-        100f..5000f,
-        98,
+        10f..5000f,
+        498,
         liveEditable,
     ) {
         change(draft.copy(speedQuietDurationMs = it.toLong()))

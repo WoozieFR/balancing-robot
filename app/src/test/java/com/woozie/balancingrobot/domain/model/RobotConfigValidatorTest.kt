@@ -40,6 +40,11 @@ class RobotConfigValidatorTest {
     }
 
     @Test
+    fun acceptsTenMillisecondRestQualification() {
+        assertTrue(RobotConfigValidator.validate(RobotConfig(speedQuietDurationMs = 10)).isValid)
+    }
+
+    @Test
     fun rejectsInconsistentOrUnsafeSpeedLoopParameters() {
         val result = RobotConfigValidator.validate(RobotConfig(
             speedTargetCmPerSec = 11.0,

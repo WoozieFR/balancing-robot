@@ -41,7 +41,7 @@ data class VelocityLoopOutput(
     val trimDeg: Double,
     val autoTrimDeg: Double = 0.0,
     val effectiveTargetDeg: Double,
-    val autoTrimState: String = "REST",
+    val autoTrimState: String = "ACQUIRE_REST",
     val settledDurationSec: Double = 0.0,
     val quiet: Boolean = false,
     val autoTrimSaturated: Boolean = false,
@@ -73,10 +73,12 @@ fun stepsPerSecondToCmPerSecond(
  *
  * The speed integral is temporary: it is integrated during MANEUVER (including
  * pure yaw), then released to zero after all commands are released. The learned
- * auto-trim is updated only in REST, from fresh wheel feedback.
+ * auto-trim is updated only in REST, from fresh wheel feedback. A balance
+ * session starts in ACQUIRE_REST, so the first trim value cannot be learned
+ * from the initial settling oscillation.
  */
 class VelocityOuterLoop(initialConfig: RobotConfig) {
-    private enum class MotionState { MANEUVER, RELEASE, REST }
+    private enum class MotionState { ACQUIRE_REST, MANEUVER, RELEASE, REST }
 
     private var config = validated(initialConfig)
     private var lastTickNs = 0L
@@ -86,7 +88,7 @@ class VelocityOuterLoop(initialConfig: RobotConfig) {
     private var wasStale = true
     private var autoTrimDeg = 0.0
     private var speedIntegralDeg = 0.0
-    private var motionState = MotionState.REST
+    private var motionState = MotionState.ACQUIRE_REST
     private var settledDurationSec = 0.0
     private var lastYawCommandActive = false
     private var currentTargetDeg: Double? = null
@@ -116,7 +118,7 @@ class VelocityOuterLoop(initialConfig: RobotConfig) {
         if (!valid.speedLoopEnabled || previous.speedLoopEnabled != valid.speedLoopEnabled) {
             autoTrimDeg = 0.0
             speedIntegralDeg = 0.0
-            motionState = MotionState.REST
+            motionState = MotionState.ACQUIRE_REST
             settledDurationSec = 0.0
             currentTargetDeg = null
             currentSpeedTargetCmPerSec = null
@@ -141,7 +143,9 @@ class VelocityOuterLoop(initialConfig: RobotConfig) {
         wasStale = true
         autoTrimDeg = 0.0
         speedIntegralDeg = 0.0
-        motionState = MotionState.REST
+        // A reset starts a fresh balance session.  The robot must first prove
+        // that it is really at rest before any speed bias is learned.
+        motionState = MotionState.ACQUIRE_REST
         settledDurationSec = 0.0
         currentTargetDeg = null
         currentSpeedTargetCmPerSec = null
@@ -211,7 +215,9 @@ class VelocityOuterLoop(initialConfig: RobotConfig) {
 
         if (!fresh) {
             wasStale = true
-            if (motionState == MotionState.RELEASE) settledDurationSec = 0.0
+            if (motionState == MotionState.ACQUIRE_REST || motionState == MotionState.RELEASE) {
+                settledDurationSec = 0.0
+            }
             return buildOutput(
                 requestedSpeedTarget = requestedSpeedTarget,
                 appliedSpeedTarget = appliedSpeedTarget,
@@ -341,7 +347,7 @@ class VelocityOuterLoop(initialConfig: RobotConfig) {
         feedbackDtSec: Double,
         appliedSpeedTarget: Double,
     ) {
-        if (motionState != MotionState.RELEASE) return
+        if (motionState != MotionState.ACQUIRE_REST && motionState != MotionState.RELEASE) return
         val integralReleased = abs(speedIntegralDeg) <= SPEED_INTEGRAL_EPSILON_DEG
         if (newFeedback && quiet && integralReleased &&
             abs(appliedSpeedTarget) <= COMMAND_DEADBAND_CM_PER_SEC
