@@ -197,7 +197,6 @@ const renderDiagnostics = (diagnostics) => {
     ['speed-filter-alpha', diagnostics.speedFilterAlpha], ['speed-angle-limit', diagnostics.speedTargetAngleLimitDeg],
     ['speed-integral-gain', diagnostics.speedIntegralGainDegPerCmPerSecSec],
     ['speed-auto-trim-gain', diagnostics.speedAutoTrimGainDegPerCmPerSecSec],
-    ['speed-integral-release', diagnostics.speedIntegralReleaseRateDegPerSec],
     ['speed-absolute-angle-limit', diagnostics.speedAbsoluteAngleLimitDeg],
     ['speed-target-slew', diagnostics.speedTargetSlewRateDegPerSec],
     ['speed-feedback-timeout', diagnostics.speedFeedbackTimeoutMs],
@@ -258,7 +257,6 @@ const parameterKeyById = {
   'speed-angle-limit': 'speedTargetAngleLimitDeg',
   'speed-integral-gain': 'speedIntegralGainDegPerCmPerSecSec',
   'speed-auto-trim-gain': 'speedAutoTrimGainDegPerCmPerSecSec',
-  'speed-integral-release': 'speedIntegralReleaseRateDegPerSec',
   'speed-absolute-angle-limit': 'speedAbsoluteAngleLimitDeg',
   'speed-target-slew': 'speedTargetSlewRateDegPerSec',
   'speed-feedback-timeout': 'speedFeedbackTimeoutMs',
@@ -361,7 +359,7 @@ const attachPrecisionInput = (range) => {
   editor.addEventListener('change', applyEditor);
 };
 
-const parameterIds = ['alpha', 'target', 'kp', 'kd', 'speed-target', 'speed-target-limit', 'speed-kev', 'speed-loop-rate', 'speed-filter-alpha', 'speed-angle-limit', 'speed-integral-gain', 'speed-auto-trim-gain', 'speed-integral-release', 'speed-absolute-angle-limit', 'speed-target-slew', 'speed-feedback-timeout', 'speed-quiet-threshold', 'speed-quiet-duration', 'yaw-target', 'yaw-kp', 'zero-offset', 'vmax', 'pwm-max', 'torque-limit', 'imu-timeout', 'fall-angle', 'fall-duration', 'manual-timeout', 'wheel-diameter', 'drive-ratio'];
+const parameterIds = ['alpha', 'target', 'kp', 'kd', 'speed-target', 'speed-target-limit', 'speed-kev', 'speed-loop-rate', 'speed-filter-alpha', 'speed-angle-limit', 'speed-integral-gain', 'speed-auto-trim-gain', 'speed-absolute-angle-limit', 'speed-target-slew', 'speed-feedback-timeout', 'speed-quiet-threshold', 'speed-quiet-duration', 'yaw-target', 'yaw-kp', 'zero-offset', 'vmax', 'pwm-max', 'torque-limit', 'imu-timeout', 'fall-angle', 'fall-duration', 'manual-timeout', 'wheel-diameter', 'drive-ratio'];
 parameterIds.forEach((id) => attachPrecisionInput($(id)));
 
 $('speed-loop-enabled').addEventListener('change', () => { markParameterPending('speed-loop-enabled', $('speed-loop-enabled').checked); clampTargetToAngleLimit(); scheduleParameterUpdate(); });

@@ -71,11 +71,6 @@ object RobotConfigValidator {
             ) {
                 error("speedAutoTrimGainDegPerCmPerSecSec", "must be finite and in [0, 2]")
             }
-            if (!config.speedIntegralReleaseRateDegPerSec.isFinite() ||
-                config.speedIntegralReleaseRateDegPerSec !in 0.1..180.0
-            ) {
-                error("speedIntegralReleaseRateDegPerSec", "must be finite and in [0.1, 180]")
-            }
             if (!config.speedAbsoluteAngleLimitDeg.isFinite() ||
                 config.speedAbsoluteAngleLimitDeg !in 5.0..45.0
             ) {

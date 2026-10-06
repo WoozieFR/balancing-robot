@@ -1412,7 +1412,6 @@ class RobotControlService : Service() {
             put("speedTargetAngleLimitDeg", config.speedTargetAngleLimitDeg)
             put("speedIntegralGainDegPerCmPerSecSec", config.speedIntegralGainDegPerCmPerSecSec)
             put("speedAutoTrimGainDegPerCmPerSecSec", config.speedAutoTrimGainDegPerCmPerSecSec)
-            put("speedIntegralReleaseRateDegPerSec", config.speedIntegralReleaseRateDegPerSec)
             put("speedAbsoluteAngleLimitDeg", config.speedAbsoluteAngleLimitDeg)
             put("speedTargetSlewRateDegPerSec", config.speedTargetSlewRateDegPerSec)
             put("speedFeedbackTimeoutMs", config.speedFeedbackTimeoutMs)
@@ -1568,8 +1567,6 @@ class RobotControlService : Service() {
                         ?: _state.value.config.speedIntegralGainDegPerCmPerSecSec,
                     speedAutoTrimGainDegPerCmPerSecSec = WebProtocol.payloadDouble(command, "speedAutoTrimGainDegPerCmPerSecSec")
                         ?: _state.value.config.speedAutoTrimGainDegPerCmPerSecSec,
-                    speedIntegralReleaseRateDegPerSec = WebProtocol.payloadDouble(command, "speedIntegralReleaseRateDegPerSec")
-                        ?: _state.value.config.speedIntegralReleaseRateDegPerSec,
                     speedAbsoluteAngleLimitDeg = WebProtocol.payloadDouble(command, "speedAbsoluteAngleLimitDeg")
                         ?: _state.value.config.speedAbsoluteAngleLimitDeg,
                     speedTargetSlewRateDegPerSec = WebProtocol.payloadDouble(command, "speedTargetSlewRateDegPerSec")

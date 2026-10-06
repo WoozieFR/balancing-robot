@@ -113,7 +113,7 @@ class ControlSessionLog(private val capacity: Int = 100_000) {
                 "speed_loop_enabled,speed_target_cmps,speed_target_limit_cmps,speed_kev_deg_per_cmps," +
                 "speed_target_slew_rate_cm_per_sec,speed_loop_rate_hz,speed_filter_alpha,speed_target_angle_limit_deg," +
                 "speed_integral_gain_deg_per_cmps_s,speed_auto_trim_gain_deg_per_cmps_s," +
-                "speed_integral_release_rate_deg_per_sec,speed_absolute_angle_limit_deg,speed_target_slew_rate_deg_per_sec," +
+                "speed_absolute_angle_limit_deg,speed_target_slew_rate_deg_per_sec," +
                 "speed_feedback_timeout_ms," +
                 "speed_quiet_threshold_cmps,speed_quiet_duration_ms," +
                 "yaw_target_dps,yaw_kp_command_per_dps," +
@@ -158,14 +158,13 @@ class ControlSessionLog(private val capacity: Int = 100_000) {
                 .append(record.speedLoopEnabled ?: config.speedLoopEnabled).append(',')
                 .append(record.speedTargetCmPerSec ?: config.speedTargetCmPerSec).append(',')
                 .append(config.speedTargetLimitCmPerSec).append(',')
-                .append(config.speedTargetSlewRateCmPerSec).append(',')
                 .append(config.speedKevDegPerCmPerSec).append(',')
+                .append(config.speedTargetSlewRateCmPerSec).append(',')
                 .append(config.speedLoopRateHz).append(',')
                 .append(config.speedFilterAlpha).append(',')
                 .append(config.speedTargetAngleLimitDeg).append(',')
                 .append(config.speedIntegralGainDegPerCmPerSecSec).append(',')
                 .append(config.speedAutoTrimGainDegPerCmPerSecSec).append(',')
-                .append(config.speedIntegralReleaseRateDegPerSec).append(',')
                 .append(config.speedAbsoluteAngleLimitDeg).append(',')
                 .append(config.speedTargetSlewRateDegPerSec).append(',')
                 .append(config.speedFeedbackTimeoutMs).append(',')

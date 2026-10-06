@@ -105,7 +105,6 @@ class VelocityOuterLoopTest {
     fun speedIntegralReturnsToZeroAfterRelease() {
         val loop = VelocityOuterLoop(config(
             speedIntegralGainDegPerCmPerSecSec = 1.0,
-            speedIntegralReleaseRateDegPerSec = 5.0,
             speedAutoTrimGainDegPerCmPerSecSec = 0.0,
         ))
         loop.step(1_000_000_000L, feedback(1, 0, 0, 995_000_000L), targetCmPerSec = 5.0)
@@ -123,6 +122,58 @@ class VelocityOuterLoopTest {
         assertTrue(accumulated.speedIntegralDeg > 0.0)
         assertTrue(released.speedIntegralDeg < accumulated.speedIntegralDeg)
         assertEquals("RELEASE", released.autoTrimState)
+    }
+
+    @Test
+    fun releasedSpeedTargetBypassesTheAccelerationRamp() {
+        val loop = VelocityOuterLoop(config(
+            speedTargetSlewRateCmPerSec = 1.0,
+            speedAutoTrimGainDegPerCmPerSecSec = 0.0,
+        ))
+        val moving = loop.step(
+            1_000_000_000L,
+            feedback(1, 0, 0, 995_000_000L),
+            targetCmPerSec = 5.0,
+        )
+        val released = loop.step(
+            1_020_000_000L,
+            feedback(2, 1_000, 1_000, 1_015_000_000L),
+            targetCmPerSec = 0.0,
+        )
+
+        assertEquals(5.0, moving.appliedTargetCmPerSec, 1e-9)
+        assertEquals(0.0, released.appliedTargetCmPerSec, 1e-9)
+        assertFalse(released.speedCommandSlewLimited)
+    }
+
+    @Test
+    fun yawReleaseClearsSpeedIntegralWhileTranslationContinues() {
+        val loop = VelocityOuterLoop(config(
+            speedIntegralGainDegPerCmPerSecSec = 1.0,
+            speedAutoTrimGainDegPerCmPerSecSec = 0.0,
+        ))
+        loop.step(
+            1_000_000_000L,
+            feedback(1, 0, 0, 995_000_000L),
+            targetCmPerSec = 5.0,
+            yawTargetDegPerSec = 60.0,
+        )
+        val duringYaw = loop.step(
+            1_020_000_000L,
+            feedback(2, 0, 0, 1_015_000_000L),
+            targetCmPerSec = 5.0,
+            yawTargetDegPerSec = 60.0,
+        )
+        val yawReleased = loop.step(
+            1_040_000_000L,
+            feedback(3, 0, 0, 1_035_000_000L),
+            targetCmPerSec = 5.0,
+            yawTargetDegPerSec = 0.0,
+        )
+
+        assertTrue(duringYaw.speedIntegralDeg > 0.0)
+        assertEquals(0.0, yawReleased.speedIntegralDeg, 1e-9)
+        assertEquals("MANEUVER", yawReleased.autoTrimState)
     }
 
     @Test
@@ -211,7 +262,6 @@ class VelocityOuterLoopTest {
         speedTargetAngleLimitDeg: Double = 10.0,
         speedIntegralGainDegPerCmPerSecSec: Double = 0.0,
         speedAutoTrimGainDegPerCmPerSecSec: Double = 0.0,
-        speedIntegralReleaseRateDegPerSec: Double = 20.0,
         speedAbsoluteAngleLimitDeg: Double = 15.0,
         speedTargetSlewRateDegPerSec: Double = 30.0,
         speedFeedbackTimeoutMs: Long = 100,
@@ -226,7 +276,6 @@ class VelocityOuterLoopTest {
         speedTargetAngleLimitDeg = speedTargetAngleLimitDeg,
         speedIntegralGainDegPerCmPerSecSec = speedIntegralGainDegPerCmPerSecSec,
         speedAutoTrimGainDegPerCmPerSecSec = speedAutoTrimGainDegPerCmPerSecSec,
-        speedIntegralReleaseRateDegPerSec = speedIntegralReleaseRateDegPerSec,
         speedAbsoluteAngleLimitDeg = speedAbsoluteAngleLimitDeg,
         speedTargetSlewRateDegPerSec = speedTargetSlewRateDegPerSec,
         speedFeedbackTimeoutMs = speedFeedbackTimeoutMs,

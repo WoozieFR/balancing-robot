@@ -56,4 +56,53 @@ class ControlSessionLogTest {
         val rows = csv.lineSequence().filter { it.isNotBlank() }.toList()
         assertEquals(rows.first().split(',').size, rows[1].split(',').size)
     }
+
+    @Test
+    fun exportsSpeedKevAndSpeedTargetSlewInHeaderOrder() {
+        val log = ControlSessionLog()
+        val config = RobotConfig(
+            speedKevDegPerCmPerSec = 0.2,
+            speedTargetSlewRateCmPerSec = 15.85,
+        )
+        val record = ControlLogRecord(
+            timestampNs = 1L,
+            receivedTimestampNs = 1L,
+            accelX = null,
+            accelY = null,
+            accelZ = null,
+            gyroXDegPerSec = null,
+            gyroYDegPerSec = null,
+            gyroZDegPerSec = null,
+            accelAngleDeg = null,
+            estimatedAngleDeg = null,
+            gyroRateDegPerSec = null,
+            dtSec = null,
+            config = config,
+            errorDeg = null,
+            rawCommand = null,
+            boundedCommand = null,
+            saturated = null,
+            motorCommand0 = null,
+            motorCommand1 = null,
+            controlLatencyMs = null,
+            armState = "DISARMED",
+            sampleStatus = null,
+        )
+        log.start()
+        log.append(record)
+        val rows = log.toCsv().lineSequence().filter { it.isNotBlank() }.toList()
+        val header = rows[0].split(',')
+        val values = rows[1].split(',')
+
+        assertEquals(
+            0.2,
+            values[header.indexOf("speed_kev_deg_per_cmps")].toDouble(),
+            1e-9,
+        )
+        assertEquals(
+            15.85,
+            values[header.indexOf("speed_target_slew_rate_cm_per_sec")].toDouble(),
+            1e-9,
+        )
+    }
 }

@@ -1174,15 +1174,6 @@ private fun BalanceTuningCard(
     ) {
         change(draft.copy(speedAutoTrimGainDegPerCmPerSecSec = it.toDouble()))
     }
-    ParameterSlider(
-        "Retour de l'intégrale (°/s)",
-        draft.speedIntegralReleaseRateDegPerSec,
-        1f..180f,
-        179,
-        liveEditable,
-    ) {
-        change(draft.copy(speedIntegralReleaseRateDegPerSec = it.toDouble()))
-    }
     ParameterSlider("Limite absolue cible (°)", draft.speedAbsoluteAngleLimitDeg, 5f..45f, 399, liveEditable) {
         val limit = it.toDouble()
         change(draft.copy(

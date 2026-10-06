@@ -87,7 +87,8 @@ data class RobotConfig(
     val speedTargetLimitCmPerSec: Double = 10.0,
     /** Maximum speed-target movement per second. */
     val speedTargetSlewRateCmPerSec: Double = 20.0,
-    val speedKevDegPerCmPerSec: Double = 0.0,
+    /** Proportional speed-loop gain. Conservative default for the measured feedback latency. */
+    val speedKevDegPerCmPerSec: Double = 0.1,
     val speedLoopRateHz: Int = 50,
     val speedFilterAlpha: Double = 0.5,
     val speedTargetAngleLimitDeg: Double = 10.0,
@@ -95,8 +96,6 @@ data class RobotConfig(
     val speedIntegralGainDegPerCmPerSecSec: Double = 0.0,
     /** Rest auto-trim gain, active only after the robot has settled. */
     val speedAutoTrimGainDegPerCmPerSecSec: Double = 0.0,
-    /** Rate at which the temporary speed integral returns to zero after release. */
-    val speedIntegralReleaseRateDegPerSec: Double = 20.0,
     /** Absolute target-angle safety envelope applied after trim + correction. */
     val speedAbsoluteAngleLimitDeg: Double = 15.0,
     /** Maximum target-angle movement per second. */

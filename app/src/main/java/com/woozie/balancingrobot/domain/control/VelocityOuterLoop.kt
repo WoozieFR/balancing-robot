@@ -88,6 +88,7 @@ class VelocityOuterLoop(initialConfig: RobotConfig) {
     private var speedIntegralDeg = 0.0
     private var motionState = MotionState.REST
     private var settledDurationSec = 0.0
+    private var lastYawCommandActive = false
     private var currentTargetDeg: Double? = null
     private var currentSpeedTargetCmPerSec: Double? = null
     private var targetSlewDtSec = 0.0
@@ -119,6 +120,7 @@ class VelocityOuterLoop(initialConfig: RobotConfig) {
             settledDurationSec = 0.0
             currentTargetDeg = null
             currentSpeedTargetCmPerSec = null
+            lastYawCommandActive = false
             autoTrimSaturated = false
         }
         if (resetFilter) {
@@ -144,6 +146,7 @@ class VelocityOuterLoop(initialConfig: RobotConfig) {
         currentTargetDeg = null
         currentSpeedTargetCmPerSec = null
         targetSlewDtSec = 0.0
+        lastYawCommandActive = false
         autoTrimSaturated = false
         lastOutput = null
     }
@@ -189,8 +192,17 @@ class VelocityOuterLoop(initialConfig: RobotConfig) {
             initializeAtDesired = previousTickNs == 0L,
         )
         val speedCommandSlewLimited = appliedSpeedTarget != requestedSpeedTarget
-        val userCommandActive = abs(requestedSpeedTarget) > COMMAND_DEADBAND_CM_PER_SEC ||
-            abs(yawTargetDegPerSec) > YAW_COMMAND_DEADBAND_DEG_PER_SEC
+        val speedCommandActive = abs(requestedSpeedTarget) > COMMAND_DEADBAND_CM_PER_SEC
+        val yawCommandActive = abs(yawTargetDegPerSec) > YAW_COMMAND_DEADBAND_DEG_PER_SEC
+        val yawReleased = lastYawCommandActive && !yawCommandActive
+        val allCommandsReleased = !speedCommandActive && !yawCommandActive
+        if (yawReleased || allCommandsReleased) {
+            // I_speed belongs to the maneuver regime that just ended. It must
+            // not survive a yaw-off transition or a complete command release.
+            speedIntegralDeg = 0.0
+        }
+        lastYawCommandActive = yawCommandActive
+        val userCommandActive = speedCommandActive || yawCommandActive
         updateMotionState(userCommandActive)
 
         val ageNs = feedback?.let { nowNs - min(it.leftTimestampNs, it.rightTimestampNs) }
@@ -199,9 +211,6 @@ class VelocityOuterLoop(initialConfig: RobotConfig) {
 
         if (!fresh) {
             wasStale = true
-            if (motionState == MotionState.RELEASE || motionState == MotionState.REST) {
-                releaseSpeedIntegral(dtSec)
-            }
             if (motionState == MotionState.RELEASE) settledDurationSec = 0.0
             return buildOutput(
                 requestedSpeedTarget = requestedSpeedTarget,
@@ -283,10 +292,10 @@ class VelocityOuterLoop(initialConfig: RobotConfig) {
         )
 
         val proportionalCorrectionDeg = config.speedKevDegPerCmPerSec * error
-        if (motionState == MotionState.MANEUVER && newFeedback && !feedbackWasStale && feedbackDtSec > 0.0) {
+        if (motionState == MotionState.MANEUVER && !yawReleased &&
+            newFeedback && !feedbackWasStale && feedbackDtSec > 0.0
+        ) {
             updateSpeedIntegral(error, feedbackDtSec, proportionalCorrectionDeg)
-        } else if (motionState == MotionState.RELEASE || motionState == MotionState.REST) {
-            releaseSpeedIntegral(dtSec)
         }
 
         if (autoTrimLearningEnabled && motionState == MotionState.REST &&
@@ -367,19 +376,6 @@ class VelocityOuterLoop(initialConfig: RobotConfig) {
                 (rawCorrection < -config.speedTargetAngleLimitDeg && errorCmPerSec < 0.0)
         if (rawCorrection == correction || !integrationWouldWorsenSaturation) {
             speedIntegralDeg = candidate
-        }
-    }
-
-    private fun releaseSpeedIntegral(dtSec: Double) {
-        if (abs(speedIntegralDeg) <= SPEED_INTEGRAL_EPSILON_DEG) {
-            speedIntegralDeg = 0.0
-            return
-        }
-        val maxDelta = config.speedIntegralReleaseRateDegPerSec * dtSec
-        if (dtSec <= 0.0 || maxDelta <= 0.0) return
-        speedIntegralDeg = when {
-            abs(speedIntegralDeg) <= maxDelta -> 0.0
-            else -> speedIntegralDeg - sign(speedIntegralDeg) * maxDelta
         }
     }
 
@@ -499,6 +495,12 @@ class VelocityOuterLoop(initialConfig: RobotConfig) {
         initializeAtDesired: Boolean,
     ): Double {
         targetSlewDtSec = dtSec
+        if (abs(desired) <= COMMAND_DEADBAND_CM_PER_SEC) {
+            // A released command is a stop request, not a slow new maneuver.
+            // Remove the command ramp so P_v immediately sees error = -v.
+            currentSpeedTargetCmPerSec = 0.0
+            return 0.0
+        }
         if (currentSpeedTargetCmPerSec == null && initializeAtDesired) {
             currentSpeedTargetCmPerSec = desired
             return desired

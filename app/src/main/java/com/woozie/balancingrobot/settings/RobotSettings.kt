@@ -44,7 +44,6 @@ object RobotSettings {
     private val speedTargetAngleLimitKey = doublePreferencesKey("speed_target_angle_limit_deg")
     private val speedIntegralGainKey = doublePreferencesKey("speed_integral_gain_deg_per_cmps_s")
     private val speedAutoTrimGainKey = doublePreferencesKey("speed_auto_trim_gain_deg_per_cmps_s")
-    private val speedIntegralReleaseRateKey = doublePreferencesKey("speed_integral_release_rate_deg_per_sec")
     private val speedAbsoluteAngleLimitKey = doublePreferencesKey("speed_absolute_angle_limit_deg")
     private val speedTargetSlewRateKey = doublePreferencesKey("speed_target_slew_rate_deg_per_sec")
     private val speedFeedbackTimeoutKey = intPreferencesKey("speed_feedback_timeout_ms")
@@ -183,8 +182,6 @@ object RobotSettings {
             speedAutoTrimGainDegPerCmPerSecSec = preferences[speedAutoTrimGainKey]
                 ?: preferences[speedIntegralGainKey]
                 ?: defaults.speedAutoTrimGainDegPerCmPerSecSec,
-            speedIntegralReleaseRateDegPerSec = preferences[speedIntegralReleaseRateKey]
-                ?: defaults.speedIntegralReleaseRateDegPerSec,
             speedAbsoluteAngleLimitDeg = preferences[speedAbsoluteAngleLimitKey]
                 ?: defaults.speedAbsoluteAngleLimitDeg,
             speedTargetSlewRateDegPerSec = preferences[speedTargetSlewRateKey]
@@ -237,7 +234,6 @@ object RobotSettings {
             preferences[speedTargetAngleLimitKey] = config.speedTargetAngleLimitDeg
             preferences[speedIntegralGainKey] = config.speedIntegralGainDegPerCmPerSecSec
             preferences[speedAutoTrimGainKey] = config.speedAutoTrimGainDegPerCmPerSecSec
-            preferences[speedIntegralReleaseRateKey] = config.speedIntegralReleaseRateDegPerSec
             preferences[speedAbsoluteAngleLimitKey] = config.speedAbsoluteAngleLimitDeg
             preferences[speedTargetSlewRateKey] = config.speedTargetSlewRateDegPerSec
             preferences[speedFeedbackTimeoutKey] = config.speedFeedbackTimeoutMs.toInt()
