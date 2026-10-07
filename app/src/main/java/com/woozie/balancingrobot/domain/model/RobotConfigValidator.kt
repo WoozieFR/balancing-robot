@@ -84,8 +84,8 @@ object RobotConfigValidator {
             ) {
                 error("speedQuietThresholdCmPerSec", "must be finite and in [0.05, 10] cm/s")
             }
-            if (config.speedQuietDurationMs !in 100..5_000) {
-                error("speedQuietDurationMs", "must be in [100, 5000] ms")
+            if (config.speedQuietDurationMs !in 10..5_000) {
+                error("speedQuietDurationMs", "must be in [10, 5000] ms")
             }
             if (!config.yawTargetDegPerSec.isFinite() || config.yawTargetDegPerSec !in -360.0..360.0) {
                 error("yawTargetDegPerSec", "must be finite and in [-360, 360] deg/s")

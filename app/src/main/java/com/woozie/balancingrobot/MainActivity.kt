@@ -1190,7 +1190,7 @@ private fun BalanceTuningCard(
     ParameterSlider(
         "Durée sous le seuil (ms)",
         draft.speedQuietDurationMs.toFloat(),
-        100f..5000f,
+        10f..5000f,
         98,
         liveEditable,
     ) {

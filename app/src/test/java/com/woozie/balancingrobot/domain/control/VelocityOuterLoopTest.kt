@@ -3,6 +3,7 @@ package com.woozie.balancingrobot.domain.control
 import com.woozie.balancingrobot.domain.model.RobotConfig
 import org.junit.Assert.assertEquals
 import org.junit.Assert.assertFalse
+import org.junit.Assert.assertNotEquals
 import org.junit.Assert.assertTrue
 import org.junit.Test
 
@@ -135,11 +136,11 @@ class VelocityOuterLoopTest {
         val halfway = loop.step(1_060_000_000L, feedback(4, 0, 0, 1_055_000_000L), 0.0)
         assertEquals(0.0, halfway.appliedTargetCmPerSec, 1e-9)
         assertEquals("SETTLING", halfway.autoTrimState)
-        assertEquals(0.0, halfway.integralCorrectionDeg, 1e-9)
+        assertEquals(movingAgain.integralCorrectionDeg, halfway.integralCorrectionDeg, 1e-9)
 
         val complete = loop.step(1_080_000_000L, feedback(5, 0, 0, 1_075_000_000L), 0.0)
         assertEquals(0.0, complete.appliedTargetCmPerSec, 1e-9)
-        assertEquals(0.0, complete.integralCorrectionDeg, 1e-9)
+        assertEquals(halfway.integralCorrectionDeg, complete.integralCorrectionDeg, 1e-9)
     }
 
     @Test
@@ -218,8 +219,9 @@ class VelocityOuterLoopTest {
         val crossing = loop.step(1_100_000_000L, feedback(6, 0, 0, 1_095_000_000L), 0.0)
         val afterCrossing = loop.step(1_120_000_000L, feedback(7, 1_000, 1_000, 1_115_000_000L), 0.0)
         assertEquals("SETTLING", crossing.autoTrimState)
-        assertEquals(rest.integralCorrectionDeg, crossing.integralCorrectionDeg, 1e-9)
-        assertTrue(afterCrossing.integralCorrectionDeg != rest.integralCorrectionDeg)
+        assertTrue(crossing.integralCorrectionDeg != rest.integralCorrectionDeg)
+        assertEquals("BRAKE_TO_ZERO", afterCrossing.autoTrimState)
+        assertTrue(afterCrossing.integralCorrectionDeg != crossing.integralCorrectionDeg)
 
         var nowNs = 1_120_000_000L
         var sequence = 7L
@@ -234,7 +236,7 @@ class VelocityOuterLoopTest {
                 pitchRateDegPerSec = 5.0,
             )
         }
-        assertEquals(rest.integralCorrectionDeg, pitchMoving.integralCorrectionDeg, 1e-9)
+        assertTrue(pitchMoving.integralCorrectionDeg != afterCrossing.integralCorrectionDeg)
 
         var relearned = pitchMoving
         repeat(40) {
@@ -247,7 +249,7 @@ class VelocityOuterLoopTest {
                 pitchRateDegPerSec = 0.0,
             )
         }
-        assertTrue(relearned.integralCorrectionDeg < rest.integralCorrectionDeg)
+        assertEquals("REST", relearned.autoTrimState)
     }
 
     @Test
@@ -489,6 +491,105 @@ class VelocityOuterLoopTest {
         assertEquals("BRAKE_TO_ZERO", departed.autoTrimState)
         assertTrue(departed.integralCorrectionDeg != settled.integralCorrectionDeg)
         assertTrue(moving.integralCorrectionDeg != 0.0)
+    }
+
+    @Test
+    fun physicalStopNeedsEquilibriumAngleAndContinuousQualification() {
+        val loop = VelocityOuterLoop(config(
+            targetDeg = 8.0,
+            speedTargetCmPerSec = 0.0,
+            speedFilterAlpha = 1.0,
+            speedIntegralGainDegPerCmPerSecSec = 1.0,
+            speedQuietThresholdCmPerSec = 0.5,
+            speedQuietDurationMs = 100,
+            speedTargetSlewRateDegPerSec = 180.0,
+        ))
+
+        loop.step(
+            1_000_000_000L,
+            feedback(1, 0, 0, 995_000_000L),
+            targetCmPerSec = 0.0,
+            pitchAngleDeg = 8.0,
+        )
+        loop.step(
+            1_020_000_000L,
+            feedback(2, 0, 0, 1_015_000_000L),
+            targetCmPerSec = 5.0,
+            pitchAngleDeg = 8.0,
+        )
+        val moving = loop.step(
+            1_040_000_000L,
+            feedback(3, 0, 0, 1_035_000_000L),
+            targetCmPerSec = 5.0,
+            pitchAngleDeg = 8.0,
+        )
+        val wrongAngle = loop.step(
+            1_060_000_000L,
+            feedback(4, 0, 0, 1_055_000_000L),
+            targetCmPerSec = 0.0,
+            pitchAngleDeg = 12.0,
+        )
+        assertEquals("BRAKE_TO_ZERO", wrongAngle.autoTrimState)
+        assertFalse(wrongAngle.physicalStopCandidate)
+
+        val firstCandidate = loop.step(
+            1_080_000_000L,
+            feedback(5, 0, 0, 1_075_000_000L),
+            targetCmPerSec = 0.0,
+            pitchAngleDeg = 8.0,
+        )
+        assertEquals("SETTLING", firstCandidate.autoTrimState)
+        assertEquals(moving.integralCorrectionDeg, firstCandidate.integralCorrectionDeg, 1e-9)
+
+        var output = firstCandidate
+        var nowNs = 1_080_000_000L
+        var sequence = 5L
+        repeat(4) {
+            nowNs += 20_000_000L
+            sequence += 1L
+            output = loop.step(
+                nowNs,
+                feedback(sequence, 0, 0, nowNs - 5_000_000L),
+                targetCmPerSec = 0.0,
+                pitchAngleDeg = 8.0,
+            )
+            assertEquals("SETTLING", output.autoTrimState)
+            assertEquals(moving.integralCorrectionDeg, output.integralCorrectionDeg, 1e-9)
+        }
+        nowNs += 20_000_000L
+        sequence += 1L
+        output = loop.step(
+            nowNs,
+            feedback(sequence, 0, 0, nowNs - 5_000_000L),
+            targetCmPerSec = 0.0,
+            pitchAngleDeg = 8.0,
+        )
+
+        assertEquals("REST", output.autoTrimState)
+        assertEquals(0.0, output.integralCorrectionDeg, 1e-9)
+        assertEquals(8.0, output.effectiveTargetDeg, 1e-9)
+        assertFalse(output.slewLimited)
+    }
+
+    @Test
+    fun newManeuverDuringBrakingKeepsUnvalidatedRestCheckpoint() {
+        val loop = VelocityOuterLoop(config(
+            speedTargetCmPerSec = 0.0,
+            speedFilterAlpha = 1.0,
+            speedIntegralGainDegPerCmPerSecSec = 1.0,
+        ))
+
+        loop.step(1_000_000_000L, feedback(1, -100, -100, 995_000_000L), 0.0)
+        val rest = loop.step(1_020_000_000L, feedback(2, -100, -100, 1_015_000_000L), 0.0)
+        val moving = loop.step(1_040_000_000L, feedback(3, 0, 0, 1_035_000_000L), 5.0)
+        val released = loop.step(1_060_000_000L, feedback(4, 1_000, 1_000, 1_055_000_000L), 0.0)
+        assertEquals("BRAKE_TO_ZERO", released.autoTrimState)
+
+        val restarted = loop.step(1_080_000_000L, feedback(5, 1_000, 1_000, 1_075_000_000L), 5.0)
+
+        assertEquals("MANEUVER", restarted.autoTrimState)
+        assertEquals(rest.restCheckpointDeg, restarted.restCheckpointDeg, 1e-9)
+        assertNotEquals(rest.restCheckpointDeg, moving.integralCorrectionDeg, 1e-9)
     }
 
     @Test

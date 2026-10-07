@@ -152,12 +152,14 @@ class VelocityOuterLoop(initialConfig: RobotConfig) {
         pitchRateDegPerSec: Double = 0.0,
         yawTargetDegPerSec: Double = config.yawTargetDegPerSec,
         yawRateDegPerSec: Double = 0.0,
+        pitchAngleDeg: Double? = null,
     ): VelocityLoopOutput {
         require(nowNs > 0L) { "monotonic timestamp must be positive" }
         require(targetCmPerSec.isFinite()) { "speed target must be finite" }
         require(pitchRateDegPerSec.isFinite()) { "pitch gyro rate must be finite" }
         require(yawTargetDegPerSec.isFinite()) { "yaw target must be finite" }
         require(yawRateDegPerSec.isFinite()) { "yaw gyro rate must be finite" }
+        require(pitchAngleDeg?.isFinite() != false) { "pitch angle must be finite" }
         val periodNs = 1_000_000_000L / config.speedLoopRateHz
         if (lastTickNs > 0L && nowNs >= lastTickNs && nowNs - lastTickNs < periodNs) {
             return checkNotNull(lastOutput).copy(updated = false)
@@ -178,10 +180,12 @@ class VelocityOuterLoop(initialConfig: RobotConfig) {
         val startedManeuver = !wasManeuverActive && maneuverActive
         val releasedManeuver = wasManeuverActive && !maneuverActive
         if (startedManeuver) {
-            // Keep one checkpoint for the trim learned while the robot was
-            // stationary. The integrator remains free to adapt throughout
-            // both translation and yaw maneuvers.
-            restTrimDeg = integralCorrectionDeg
+            // A checkpoint is captured only from a validated REST state. If
+            // the user starts a new maneuver while braking or settling, keep
+            // the previous rest checkpoint: it has not been validated yet.
+            if (autoTrimState == AutoTrimState.REST) {
+                restTrimDeg = integralCorrectionDeg
+            }
             autoTrimState = AutoTrimState.MANEUVER
             settledDurationSec = 0.0
         } else if (maneuverActive) {
@@ -285,14 +289,24 @@ class VelocityOuterLoop(initialConfig: RobotConfig) {
         }
         wasStale = false
         val filtered = checkNotNull(filteredCmPerSec)
-        // Stop detection is based on the absolute filtered mean wheel speed,
-        // never on one wheel and never on a single sign crossing.
+        // A zero crossing of the wheel speed is not a physical stop. The
+        // pendulum must also be close to the equilibrium represented by the
+        // checkpoint and have low pitch/yaw rates. The angle is optional for
+        // callers that do not have an estimate yet; production supplies the
+        // latest complementary-filter estimate.
+        val checkpointAngleDeg = config.targetDeg + restTrimDeg
+        val angleErrorToCheckpointDeg = pitchAngleDeg?.let {
+            abs(it - checkpointAngleDeg)
+        }
         val physicalStopCandidate = abs(filtered) < config.speedQuietThresholdCmPerSec &&
-            abs(yawRateDegPerSec) < QUIET_YAW_RATE_THRESHOLD_DEG_PER_SEC
+            abs(pitchRateDegPerSec) < PHYSICAL_STOP_PITCH_RATE_THRESHOLD_DEG_PER_SEC &&
+            abs(yawRateDegPerSec) < QUIET_YAW_RATE_THRESHOLD_DEG_PER_SEC &&
+            (angleErrorToCheckpointDeg == null ||
+                angleErrorToCheckpointDeg < PHYSICAL_STOP_ANGLE_THRESHOLD_DEG)
         val quiet = physicalStopCandidate &&
-            abs(pitchRateDegPerSec) < QUIET_PITCH_RATE_THRESHOLD_DEG_PER_SEC &&
             abs(yawTargetDegPerSec) <= COMMAND_EPSILON &&
             abs(appliedSpeedTarget) <= COMMAND_EPSILON
+        var checkpointRestoredThisStep = false
         if (newFeedback && feedbackDtSec > 0.0 && !maneuverActive) {
             when (autoTrimState) {
                 AutoTrimState.MANEUVER -> {
@@ -301,23 +315,24 @@ class VelocityOuterLoop(initialConfig: RobotConfig) {
                 }
                 AutoTrimState.BRAKE_TO_ZERO -> {
                     if (physicalStopCandidate) {
-                        integralCorrectionDeg = restTrimDeg
+                        // Start a continuous qualification window. Do not
+                        // restore the checkpoint on the first near-zero
+                        // sample: the robot may only be crossing v=0.
                         autoTrimState = AutoTrimState.SETTLING
                         settledDurationSec = 0.0
                     }
                 }
                 AutoTrimState.SETTLING -> {
-                    if (abs(filtered) > config.speedQuietThresholdCmPerSec) {
+                    if (!physicalStopCandidate) {
                         autoTrimState = AutoTrimState.BRAKE_TO_ZERO
                         settledDurationSec = 0.0
-                    } else if (quiet) {
+                    } else {
                         settledDurationSec += feedbackDtSec
                         if (settledDurationSec >= config.speedQuietDurationMs / 1_000.0) {
+                            integralCorrectionDeg = restTrimDeg
                             autoTrimState = AutoTrimState.REST
-                            restTrimDeg = integralCorrectionDeg
+                            checkpointRestoredThisStep = true
                         }
-                    } else {
-                        settledDurationSec = 0.0
                     }
                 }
                 AutoTrimState.REST -> Unit
@@ -377,6 +392,7 @@ class VelocityOuterLoop(initialConfig: RobotConfig) {
                 (absoluteTargetSaturated && ((rawTargetCandidate > absoluteTargetCandidate && error > 0.0) ||
                     (rawTargetCandidate < absoluteTargetCandidate && error < 0.0)))
         val allowIntegralUpdate = autoTrimState != AutoTrimState.SETTLING &&
+            !checkpointRestoredThisStep &&
             newFeedback && !feedbackWasStale && feedbackDtSec > 0.0
         if (allowIntegralUpdate && !integrationWouldWorsenSaturation) {
             integralCorrectionDeg = integralCandidate
@@ -389,12 +405,20 @@ class VelocityOuterLoop(initialConfig: RobotConfig) {
             -config.speedAbsoluteAngleLimitDeg,
             config.speedAbsoluteAngleLimitDeg,
         )
-        val effective = approachTarget(
-            absoluteTarget,
-            dtSec,
-            applySlew = true,
-            initializeAtDesired = currentTargetDeg == null,
-        )
+        val effective = if (checkpointRestoredThisStep) {
+            // Drop the old braking target together with the checkpoint
+            // restoration. Otherwise the pitch target slew would keep
+            // applying the obsolete braking command for several cycles.
+            currentTargetDeg = absoluteTarget
+            absoluteTarget
+        } else {
+            approachTarget(
+                absoluteTarget,
+                dtSec,
+                applySlew = true,
+                initializeAtDesired = currentTargetDeg == null,
+            )
+        }
         return VelocityLoopOutput(
             enabled = config.speedLoopEnabled,
             updated = true,
@@ -494,8 +518,8 @@ class VelocityOuterLoop(initialConfig: RobotConfig) {
     }
 
     private companion object {
-        const val QUIET_PITCH_RATE_THRESHOLD_DEG_PER_SEC = 3.0
-        const val QUIET_YAW_TARGET_THRESHOLD_DEG_PER_SEC = 1.0
+        const val PHYSICAL_STOP_PITCH_RATE_THRESHOLD_DEG_PER_SEC = 2.0
+        const val PHYSICAL_STOP_ANGLE_THRESHOLD_DEG = 1.0
         const val QUIET_YAW_RATE_THRESHOLD_DEG_PER_SEC = 3.0
         const val COMMAND_EPSILON = 1e-6
     }

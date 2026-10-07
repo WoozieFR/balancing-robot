@@ -1074,6 +1074,7 @@ class RobotControlService : Service() {
             gyroDps,
             driveSetpoint.yawTargetDegPerSec,
             gyroZDps ?: 0.0,
+            pitchAngleDeg = _state.value.imu.estimatedAngleDeg,
         )
         val step = imuRuntime?.step(
             accel!!,
@@ -1166,6 +1167,7 @@ class RobotControlService : Service() {
         pitchRateDegPerSec: Double = 0.0,
         yawTargetDegPerSec: Double = activeConfig.yawTargetDegPerSec,
         yawRateDegPerSec: Double = 0.0,
+        pitchAngleDeg: Double? = null,
     ): VelocityLoopOutput {
         val snapshot = motorScheduler?.velocitySnapshot()
         val feedback = if (
@@ -1199,6 +1201,7 @@ class RobotControlService : Service() {
             pitchRateDegPerSec,
             yawTargetDegPerSec,
             yawRateDegPerSec,
+            pitchAngleDeg,
         )
         if (output.updated) {
             speedLoopActualRateHz = speedLoopRateMeter.record(nowNs).frequencyHz
