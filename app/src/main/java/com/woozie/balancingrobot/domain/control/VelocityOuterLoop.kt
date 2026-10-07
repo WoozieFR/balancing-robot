@@ -299,10 +299,10 @@ class VelocityOuterLoop(initialConfig: RobotConfig) {
             abs(it - checkpointAngleDeg)
         }
         val physicalStopCandidate = abs(filtered) < config.speedQuietThresholdCmPerSec &&
-            abs(pitchRateDegPerSec) < PHYSICAL_STOP_PITCH_RATE_THRESHOLD_DEG_PER_SEC &&
-            abs(yawRateDegPerSec) < QUIET_YAW_RATE_THRESHOLD_DEG_PER_SEC &&
+            abs(pitchRateDegPerSec) < config.speedPhysicalStopPitchRateThresholdDegPerSec &&
+            abs(yawRateDegPerSec) < config.speedPhysicalStopYawRateThresholdDegPerSec &&
             (angleErrorToCheckpointDeg == null ||
-                angleErrorToCheckpointDeg < PHYSICAL_STOP_ANGLE_THRESHOLD_DEG)
+                angleErrorToCheckpointDeg < config.speedPhysicalStopAngleThresholdDeg)
         val quiet = physicalStopCandidate &&
             abs(yawTargetDegPerSec) <= COMMAND_EPSILON &&
             abs(appliedSpeedTarget) <= COMMAND_EPSILON
@@ -518,9 +518,6 @@ class VelocityOuterLoop(initialConfig: RobotConfig) {
     }
 
     private companion object {
-        const val PHYSICAL_STOP_PITCH_RATE_THRESHOLD_DEG_PER_SEC = 2.0
-        const val PHYSICAL_STOP_ANGLE_THRESHOLD_DEG = 1.0
-        const val QUIET_YAW_RATE_THRESHOLD_DEG_PER_SEC = 3.0
         const val COMMAND_EPSILON = 1e-6
     }
 

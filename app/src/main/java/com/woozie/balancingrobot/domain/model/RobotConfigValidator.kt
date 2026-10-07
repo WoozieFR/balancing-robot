@@ -87,6 +87,27 @@ object RobotConfigValidator {
             if (config.speedQuietDurationMs !in 10..5_000) {
                 error("speedQuietDurationMs", "must be in [10, 5000] ms")
             }
+            if (!config.speedPhysicalStopAngleThresholdDeg.isFinite() ||
+                config.speedPhysicalStopAngleThresholdDeg !in 0.1..15.0
+            ) {
+                error("speedPhysicalStopAngleThresholdDeg", "must be finite and in [0.1, 15] degrees")
+            }
+            if (!config.speedPhysicalStopPitchRateThresholdDegPerSec.isFinite() ||
+                config.speedPhysicalStopPitchRateThresholdDegPerSec !in 0.1..90.0
+            ) {
+                error(
+                    "speedPhysicalStopPitchRateThresholdDegPerSec",
+                    "must be finite and in [0.1, 90] deg/s",
+                )
+            }
+            if (!config.speedPhysicalStopYawRateThresholdDegPerSec.isFinite() ||
+                config.speedPhysicalStopYawRateThresholdDegPerSec !in 0.1..90.0
+            ) {
+                error(
+                    "speedPhysicalStopYawRateThresholdDegPerSec",
+                    "must be finite and in [0.1, 90] deg/s",
+                )
+            }
             if (!config.yawTargetDegPerSec.isFinite() || config.yawTargetDegPerSec !in -360.0..360.0) {
                 error("yawTargetDegPerSec", "must be finite and in [-360, 360] deg/s")
             }

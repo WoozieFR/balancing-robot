@@ -48,6 +48,9 @@ object RobotSettings {
     private val speedFeedbackTimeoutKey = intPreferencesKey("speed_feedback_timeout_ms")
     private val speedQuietThresholdKey = doublePreferencesKey("speed_quiet_threshold_cm_per_sec")
     private val speedQuietDurationKey = intPreferencesKey("speed_quiet_duration_ms")
+    private val speedPhysicalStopAngleThresholdKey = doublePreferencesKey("speed_physical_stop_angle_threshold_deg")
+    private val speedPhysicalStopPitchRateThresholdKey = doublePreferencesKey("speed_physical_stop_pitch_rate_threshold_deg_per_sec")
+    private val speedPhysicalStopYawRateThresholdKey = doublePreferencesKey("speed_physical_stop_yaw_rate_threshold_deg_per_sec")
     private val yawTargetKey = doublePreferencesKey("yaw_target_deg_per_sec")
     private val yawKpKey = doublePreferencesKey("yaw_kp_command_per_deg_per_sec")
     private val wheelDiameterKey = doublePreferencesKey("wheel_diameter_mm")
@@ -188,6 +191,12 @@ object RobotSettings {
                 ?: defaults.speedQuietThresholdCmPerSec,
             speedQuietDurationMs = (preferences[speedQuietDurationKey]
                 ?: defaults.speedQuietDurationMs.toInt()).toLong(),
+            speedPhysicalStopAngleThresholdDeg = preferences[speedPhysicalStopAngleThresholdKey]
+                ?: defaults.speedPhysicalStopAngleThresholdDeg,
+            speedPhysicalStopPitchRateThresholdDegPerSec = preferences[speedPhysicalStopPitchRateThresholdKey]
+                ?: defaults.speedPhysicalStopPitchRateThresholdDegPerSec,
+            speedPhysicalStopYawRateThresholdDegPerSec = preferences[speedPhysicalStopYawRateThresholdKey]
+                ?: defaults.speedPhysicalStopYawRateThresholdDegPerSec,
             yawTargetDegPerSec = preferences[yawTargetKey] ?: defaults.yawTargetDegPerSec,
             yawKpCommandPerDegPerSec = preferences[yawKpKey] ?: defaults.yawKpCommandPerDegPerSec,
             wheelDiameterMm = preferences[wheelDiameterKey] ?: defaults.wheelDiameterMm,
@@ -234,6 +243,9 @@ object RobotSettings {
             preferences[speedFeedbackTimeoutKey] = config.speedFeedbackTimeoutMs.toInt()
             preferences[speedQuietThresholdKey] = config.speedQuietThresholdCmPerSec
             preferences[speedQuietDurationKey] = config.speedQuietDurationMs.toInt()
+            preferences[speedPhysicalStopAngleThresholdKey] = config.speedPhysicalStopAngleThresholdDeg
+            preferences[speedPhysicalStopPitchRateThresholdKey] = config.speedPhysicalStopPitchRateThresholdDegPerSec
+            preferences[speedPhysicalStopYawRateThresholdKey] = config.speedPhysicalStopYawRateThresholdDegPerSec
             preferences[yawTargetKey] = config.yawTargetDegPerSec
             preferences[yawKpKey] = config.yawKpCommandPerDegPerSec
             preferences[wheelDiameterKey] = config.wheelDiameterMm

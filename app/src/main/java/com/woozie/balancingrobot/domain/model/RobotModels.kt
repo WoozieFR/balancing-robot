@@ -102,6 +102,12 @@ data class RobotConfig(
     val speedQuietThresholdCmPerSec: Double = 0.5,
     /** Required continuous quiet duration before auto-trim learning resumes. */
     val speedQuietDurationMs: Long = 700,
+    /** Maximum pitch-angle error from the rest checkpoint for a physical stop. */
+    val speedPhysicalStopAngleThresholdDeg: Double = 1.0,
+    /** Maximum pitch gyro rate for a physical stop. */
+    val speedPhysicalStopPitchRateThresholdDegPerSec: Double = 2.0,
+    /** Maximum yaw gyro rate for a physical stop. */
+    val speedPhysicalStopYawRateThresholdDegPerSec: Double = 3.0,
     /** Desired yaw rate. Zero explicitly disables the yaw correction loop. */
     val yawTargetDegPerSec: Double = 0.0,
     /** Proportional yaw gain in motor-command units per deg/s. */

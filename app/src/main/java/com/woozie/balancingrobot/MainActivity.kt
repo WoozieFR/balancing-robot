@@ -1196,6 +1196,33 @@ private fun BalanceTuningCard(
     ) {
         change(draft.copy(speedQuietDurationMs = it.toLong()))
     }
+    ParameterSlider(
+        "Écart angle arrêt physique (°)",
+        draft.speedPhysicalStopAngleThresholdDeg,
+        0.1f..15f,
+        149,
+        liveEditable,
+    ) {
+        change(draft.copy(speedPhysicalStopAngleThresholdDeg = it.toDouble()))
+    }
+    ParameterSlider(
+        "Gyro pitch arrêt physique (°/s)",
+        draft.speedPhysicalStopPitchRateThresholdDegPerSec,
+        0.1f..30f,
+        99,
+        liveEditable,
+    ) {
+        change(draft.copy(speedPhysicalStopPitchRateThresholdDegPerSec = it.toDouble()))
+    }
+    ParameterSlider(
+        "Gyro yaw arrêt physique (°/s)",
+        draft.speedPhysicalStopYawRateThresholdDegPerSec,
+        0.1f..30f,
+        99,
+        liveEditable,
+    ) {
+        change(draft.copy(speedPhysicalStopYawRateThresholdDegPerSec = it.toDouble()))
+    }
     ParameterSlider("Consigne rotation (°/s)", draft.yawTargetDegPerSec, -360f..360f, 143, liveEditable) {
         change(draft.copy(yawTargetDegPerSec = it.toDouble()))
     }

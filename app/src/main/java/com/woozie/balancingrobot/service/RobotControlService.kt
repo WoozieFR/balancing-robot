@@ -1414,6 +1414,9 @@ class RobotControlService : Service() {
             put("speedFeedbackTimeoutMs", config.speedFeedbackTimeoutMs)
             put("speedQuietThresholdCmPerSec", config.speedQuietThresholdCmPerSec)
             put("speedQuietDurationMs", config.speedQuietDurationMs)
+            put("speedPhysicalStopAngleThresholdDeg", config.speedPhysicalStopAngleThresholdDeg)
+            put("speedPhysicalStopPitchRateThresholdDegPerSec", config.speedPhysicalStopPitchRateThresholdDegPerSec)
+            put("speedPhysicalStopYawRateThresholdDegPerSec", config.speedPhysicalStopYawRateThresholdDegPerSec)
             put("yawTargetDegPerSec", config.yawTargetDegPerSec)
             put("yawKpCommandPerDegPerSec", config.yawKpCommandPerDegPerSec)
             put("wheelDiameterMm", config.wheelDiameterMm)
@@ -1578,6 +1581,18 @@ class RobotControlService : Service() {
                         WebProtocol.payloadInt(command, "speedQuietDurationMs")
                             ?: _state.value.config.speedQuietDurationMs.toInt()
                         ).toLong(),
+                    speedPhysicalStopAngleThresholdDeg = WebProtocol.payloadDouble(
+                        command,
+                        "speedPhysicalStopAngleThresholdDeg",
+                    ) ?: _state.value.config.speedPhysicalStopAngleThresholdDeg,
+                    speedPhysicalStopPitchRateThresholdDegPerSec = WebProtocol.payloadDouble(
+                        command,
+                        "speedPhysicalStopPitchRateThresholdDegPerSec",
+                    ) ?: _state.value.config.speedPhysicalStopPitchRateThresholdDegPerSec,
+                    speedPhysicalStopYawRateThresholdDegPerSec = WebProtocol.payloadDouble(
+                        command,
+                        "speedPhysicalStopYawRateThresholdDegPerSec",
+                    ) ?: _state.value.config.speedPhysicalStopYawRateThresholdDegPerSec,
                     yawTargetDegPerSec = WebProtocol.payloadDouble(command, "yawTargetDegPerSec")
                         ?: _state.value.config.yawTargetDegPerSec,
                     yawKpCommandPerDegPerSec = WebProtocol.payloadDouble(command, "yawKpCommandPerDegPerSec")

@@ -115,6 +115,8 @@ class ControlSessionLog(private val capacity: Int = 100_000) {
                 "speed_target_slew_rate_cm_per_sec,speed_loop_rate_hz,speed_filter_alpha,speed_target_angle_limit_deg," +
                 "speed_integral_gain_deg_per_cmps_s,speed_absolute_angle_limit_deg,speed_target_slew_rate_deg_per_sec," +
                 "speed_feedback_timeout_ms,speed_quiet_threshold_cmps,speed_quiet_duration_ms," +
+                "speed_physical_stop_angle_threshold_deg,speed_physical_stop_pitch_rate_threshold_dps," +
+                "speed_physical_stop_yaw_rate_threshold_dps," +
                 "yaw_target_dps,yaw_kp_command_per_dps," +
                 "wheel_diameter_mm,drive_ratio," +
                 "vmax,motor_control_mode,pwm_max,command_limit,motor_id_0,motor_id_1,motor_sign_0,motor_sign_1,baud_rate,torque_limit," +
@@ -167,6 +169,9 @@ class ControlSessionLog(private val capacity: Int = 100_000) {
                 .append(config.speedFeedbackTimeoutMs).append(',')
                 .append(config.speedQuietThresholdCmPerSec).append(',')
                 .append(config.speedQuietDurationMs).append(',')
+                .append(config.speedPhysicalStopAngleThresholdDeg).append(',')
+                .append(config.speedPhysicalStopPitchRateThresholdDegPerSec).append(',')
+                .append(config.speedPhysicalStopYawRateThresholdDegPerSec).append(',')
                 .append(config.yawTargetDegPerSec).append(',')
                 .append(config.yawKpCommandPerDegPerSec).append(',')
                 .append(config.wheelDiameterMm).append(',')

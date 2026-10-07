@@ -572,6 +572,38 @@ class VelocityOuterLoopTest {
     }
 
     @Test
+    fun physicalStopCriteriaUseConfiguredThresholds() {
+        val loop = VelocityOuterLoop(config(
+            targetDeg = 8.0,
+            speedTargetCmPerSec = 0.0,
+            speedFilterAlpha = 1.0,
+            speedPhysicalStopAngleThresholdDeg = 0.5,
+            speedPhysicalStopPitchRateThresholdDegPerSec = 1.0,
+            speedPhysicalStopYawRateThresholdDegPerSec = 1.0,
+        ))
+
+        val accepted = loop.step(
+            1_000_000_000L,
+            feedback(1, 0, 0, 995_000_000L),
+            targetCmPerSec = 0.0,
+            pitchRateDegPerSec = 0.9,
+            yawRateDegPerSec = 0.9,
+            pitchAngleDeg = 8.4,
+        )
+        val rejected = loop.step(
+            1_020_000_000L,
+            feedback(2, 0, 0, 1_015_000_000L),
+            targetCmPerSec = 0.0,
+            pitchRateDegPerSec = 1.1,
+            yawRateDegPerSec = 0.9,
+            pitchAngleDeg = 8.4,
+        )
+
+        assertTrue(accepted.physicalStopCandidate)
+        assertFalse(rejected.physicalStopCandidate)
+    }
+
+    @Test
     fun newManeuverDuringBrakingKeepsUnvalidatedRestCheckpoint() {
         val loop = VelocityOuterLoop(config(
             speedTargetCmPerSec = 0.0,
@@ -630,6 +662,9 @@ class VelocityOuterLoopTest {
         speedFeedbackTimeoutMs: Long = 100,
         speedQuietThresholdCmPerSec: Double = 0.5,
         speedQuietDurationMs: Long = 700,
+        speedPhysicalStopAngleThresholdDeg: Double = 1.0,
+        speedPhysicalStopPitchRateThresholdDegPerSec: Double = 2.0,
+        speedPhysicalStopYawRateThresholdDegPerSec: Double = 3.0,
     ) = RobotConfig(
         targetDeg = targetDeg,
         speedLoopEnabled = speedLoopEnabled,
@@ -645,6 +680,9 @@ class VelocityOuterLoopTest {
         speedFeedbackTimeoutMs = speedFeedbackTimeoutMs,
         speedQuietThresholdCmPerSec = speedQuietThresholdCmPerSec,
         speedQuietDurationMs = speedQuietDurationMs,
+        speedPhysicalStopAngleThresholdDeg = speedPhysicalStopAngleThresholdDeg,
+        speedPhysicalStopPitchRateThresholdDegPerSec = speedPhysicalStopPitchRateThresholdDegPerSec,
+        speedPhysicalStopYawRateThresholdDegPerSec = speedPhysicalStopYawRateThresholdDegPerSec,
     )
 
     private fun feedback(
