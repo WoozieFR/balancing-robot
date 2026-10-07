@@ -21,6 +21,7 @@ data class VelocityLoopOutput(
     val stale: Boolean,
     val feedbackSequence: Long? = null,
     val feedbackAgeMs: Double? = null,
+    val feedbackDtMs: Double? = null,
     val leftRawStepsPerSec: Int? = null,
     val rightRawStepsPerSec: Int? = null,
     val leftCmPerSec: Double? = null,
@@ -31,13 +32,16 @@ data class VelocityLoopOutput(
     val appliedTargetCmPerSec: Double = targetCmPerSec,
     val speedCommandSlewLimited: Boolean = false,
     val errorCmPerSec: Double? = null,
+    val proportionalCorrectionDeg: Double = 0.0,
     val correctionDeg: Double = 0.0,
     val integralCorrectionDeg: Double = 0.0,
     val trimDeg: Double,
     val effectiveTargetDeg: Double,
-    val autoTrimState: String = "SETTLED",
+    val autoTrimState: String = "REST",
     val restTrimDeg: Double = 0.0,
+    val restCheckpointDeg: Double = restTrimDeg,
     val settledDurationSec: Double = 0.0,
+    val physicalStopCandidate: Boolean = false,
     val quiet: Boolean = false,
     val saturated: Boolean = false,
     val slewLimited: Boolean = false,
@@ -61,24 +65,18 @@ fun stepsPerSecondToCmPerSecond(
 
 /** Stateful, I/O-free outer velocity loop. Called from the IMU control thread. */
 class VelocityOuterLoop(initialConfig: RobotConfig) {
-    private enum class AutoTrimState { MOVING, BRAKING, YAW_SETTLING, SETTLED }
+    private enum class AutoTrimState { MANEUVER, BRAKE_TO_ZERO, SETTLING, REST }
 
     private var config = validated(initialConfig)
     private var lastTickNs = 0L
     private var lastFeedbackSequence: Long? = null
+    private var lastFeedbackTimestampNs: Long? = null
     private var filteredCmPerSec: Double? = null
     private var wasStale = true
     private var integralCorrectionDeg = 0.0
     private var restTrimDeg = 0.0
-    private var releaseIntegralDeg = 0.0
-    private var releaseSpeedTargetCmPerSec = 0.0
-    private var releaseRampComplete = true
-    /** True after a commanded movement has created a valid rest checkpoint. */
-    private var hasRestCheckpoint = false
     private var wasManeuverActive = false
-    /** True if the current maneuver included a non-zero translation command. */
-    private var maneuverHadTranslation = false
-    private var autoTrimState = AutoTrimState.SETTLED
+    private var autoTrimState = AutoTrimState.REST
     private var settledDurationSec = 0.0
     private var staleDurationSec = 0.0
     private var currentTargetDeg: Double? = null
@@ -98,13 +96,8 @@ class VelocityOuterLoop(initialConfig: RobotConfig) {
         if (!valid.speedLoopEnabled || modeChanged) {
             integralCorrectionDeg = 0.0
             restTrimDeg = 0.0
-            releaseIntegralDeg = 0.0
-            releaseSpeedTargetCmPerSec = 0.0
-            releaseRampComplete = true
-            hasRestCheckpoint = false
             wasManeuverActive = false
-            maneuverHadTranslation = false
-            autoTrimState = AutoTrimState.SETTLED
+            autoTrimState = AutoTrimState.REST
             settledDurationSec = 0.0
             staleDurationSec = 0.0
             currentTargetDeg = null
@@ -125,13 +118,8 @@ class VelocityOuterLoop(initialConfig: RobotConfig) {
             wasStale = true
             integralCorrectionDeg = 0.0
             restTrimDeg = 0.0
-            releaseIntegralDeg = 0.0
-            releaseSpeedTargetCmPerSec = 0.0
-            releaseRampComplete = true
-            hasRestCheckpoint = false
             wasManeuverActive = false
-            maneuverHadTranslation = false
-            autoTrimState = AutoTrimState.SETTLED
+            autoTrimState = AutoTrimState.REST
             settledDurationSec = 0.0
             staleDurationSec = 0.0
             currentTargetDeg = null
@@ -143,17 +131,13 @@ class VelocityOuterLoop(initialConfig: RobotConfig) {
     fun reset() {
         lastTickNs = 0L
         lastFeedbackSequence = null
+        lastFeedbackTimestampNs = null
         filteredCmPerSec = null
         wasStale = true
         integralCorrectionDeg = 0.0
         restTrimDeg = 0.0
-        releaseIntegralDeg = 0.0
-        releaseSpeedTargetCmPerSec = 0.0
-        releaseRampComplete = true
-        hasRestCheckpoint = false
         wasManeuverActive = false
-        maneuverHadTranslation = false
-        autoTrimState = AutoTrimState.SETTLED
+        autoTrimState = AutoTrimState.REST
         settledDurationSec = 0.0
         staleDurationSec = 0.0
         currentTargetDeg = null
@@ -198,44 +182,22 @@ class VelocityOuterLoop(initialConfig: RobotConfig) {
             // stationary. The integrator remains free to adapt throughout
             // both translation and yaw maneuvers.
             restTrimDeg = integralCorrectionDeg
-            hasRestCheckpoint = true
-            autoTrimState = AutoTrimState.MOVING
+            autoTrimState = AutoTrimState.MANEUVER
             settledDurationSec = 0.0
-            releaseRampComplete = true
-            maneuverHadTranslation = speedCommandActive
-        }
-        if (maneuverActive && speedCommandActive) {
-            maneuverHadTranslation = true
+        } else if (maneuverActive) {
+            autoTrimState = AutoTrimState.MANEUVER
+            settledDurationSec = 0.0
+        } else if (releasedManeuver) {
+            autoTrimState = AutoTrimState.BRAKE_TO_ZERO
+            settledDurationSec = 0.0
         }
         wasManeuverActive = maneuverActive
-        val previousAppliedSpeedTarget = currentSpeedTargetCmPerSec ?: requestedSpeedTarget
         val appliedSpeedTarget = approachSpeedTarget(
             requestedSpeedTarget,
             dtSec,
             initializeAtDesired = previousTickNs == 0L,
         )
         val speedCommandSlewLimited = appliedSpeedTarget != requestedSpeedTarget
-        if (releasedManeuver) {
-            if (maneuverHadTranslation) {
-                // Capture the translation bias and the currently applied
-                // (ramped) speed. The integral is transferred to restTrim
-                // progressively in sync with this applied target instead of
-                // being reset at the exact joystick-release instant.
-                releaseIntegralDeg = integralCorrectionDeg
-                releaseSpeedTargetCmPerSec = previousAppliedSpeedTarget
-                releaseRampComplete = abs(previousAppliedSpeedTarget) <= RELEASE_SPEED_EPSILON
-                if (releaseRampComplete) integralCorrectionDeg = restTrimDeg
-                autoTrimState = AutoTrimState.BRAKING
-            } else {
-                // A pure yaw maneuver has no translation integral to unwind.
-                // Preserve its compensation while the measured speed and yaw
-                // settle, then resume normal rest auto-trim learning.
-                releaseRampComplete = true
-                autoTrimState = AutoTrimState.YAW_SETTLING
-            }
-            settledDurationSec = 0.0
-        }
-
         val ageNs = feedback?.let {
             nowNs - min(it.leftTimestampNs, it.rightTimestampNs)
         }
@@ -247,9 +209,6 @@ class VelocityOuterLoop(initialConfig: RobotConfig) {
             // The quiet interval must be continuous on fresh feedback. A
             // telemetry gap cannot contribute to the settled duration.
             settledDurationSec = 0.0
-            if (autoTrimState == AutoTrimState.BRAKING) {
-                updateBrakingIntegral(appliedSpeedTarget)
-            }
             // A single missed telemetry sample must not erase the learned trim
             // or make the target angle jump. Hold the last target briefly,
             // then return progressively toward the saved rest trim.
@@ -260,9 +219,7 @@ class VelocityOuterLoop(initialConfig: RobotConfig) {
                     config.speedAbsoluteAngleLimitDeg,
                 )
             } else trim
-            val desired = if (config.speedLoopEnabled &&
-                staleDurationSec <= STALE_TARGET_HOLD_SEC && currentTargetDeg != null
-            ) {
+            val desired = if (config.speedLoopEnabled && currentTargetDeg != null) {
                 currentTargetDeg!!
             } else restTarget
             val effective = approachTarget(desired, dtSec, config.speedLoopEnabled)
@@ -300,6 +257,13 @@ class VelocityOuterLoop(initialConfig: RobotConfig) {
 
         feedback!!
         staleDurationSec = 0.0
+        val feedbackTimestampNs = min(feedback.leftTimestampNs, feedback.rightTimestampNs)
+        val newFeedback = feedback.sequence != lastFeedbackSequence
+        val feedbackWasStale = wasStale
+        val feedbackDtSec = if (newFeedback && !feedbackWasStale && lastFeedbackTimestampNs != null) {
+            ((feedbackTimestampNs - checkNotNull(lastFeedbackTimestampNs)).toDouble() /
+                1_000_000_000.0).coerceIn(0.0, 0.5)
+        } else 0.0
         val left = stepsPerSecondToCmPerSecond(
             feedback.leftStepsPerSec,
             config.wheelDiameterMm,
@@ -311,80 +275,52 @@ class VelocityOuterLoop(initialConfig: RobotConfig) {
             config.driveRatio,
         )
         val mean = (left + right) / 2.0
-        if (feedback.sequence != lastFeedbackSequence) {
-            filteredCmPerSec = if (filteredCmPerSec == null || wasStale) mean else {
+        if (newFeedback) {
+            filteredCmPerSec = if (filteredCmPerSec == null || feedbackWasStale) mean else {
                 config.speedFilterAlpha * mean +
                     (1.0 - config.speedFilterAlpha) * checkNotNull(filteredCmPerSec)
             }
             lastFeedbackSequence = feedback.sequence
+            lastFeedbackTimestampNs = feedbackTimestampNs
         }
         wasStale = false
         val filtered = checkNotNull(filteredCmPerSec)
-        // The quiet-speed test is intentionally based on the absolute value
-        // of the filtered mean of both wheels. A brief sign crossing must not
-        // qualify as settled unless it remains inside the configured band.
-        val quiet = abs(filtered) < config.speedQuietThresholdCmPerSec &&
-            abs(pitchRateDegPerSec) < QUIET_PITCH_RATE_THRESHOLD_DEG_PER_SEC &&
-            abs(yawTargetDegPerSec) < QUIET_YAW_TARGET_THRESHOLD_DEG_PER_SEC
-        val yawSettled = quiet &&
+        // Stop detection is based on the absolute filtered mean wheel speed,
+        // never on one wheel and never on a single sign crossing.
+        val physicalStopCandidate = abs(filtered) < config.speedQuietThresholdCmPerSec &&
             abs(yawRateDegPerSec) < QUIET_YAW_RATE_THRESHOLD_DEG_PER_SEC
-        if (maneuverActive) {
-            autoTrimState = AutoTrimState.MOVING
-            settledDurationSec = 0.0
-        } else {
+        val quiet = physicalStopCandidate &&
+            abs(pitchRateDegPerSec) < QUIET_PITCH_RATE_THRESHOLD_DEG_PER_SEC &&
+            abs(yawTargetDegPerSec) <= COMMAND_EPSILON &&
+            abs(appliedSpeedTarget) <= COMMAND_EPSILON
+        if (newFeedback && feedbackDtSec > 0.0 && !maneuverActive) {
             when (autoTrimState) {
-                AutoTrimState.MOVING -> {
-                    if (maneuverHadTranslation) {
-                        autoTrimState = AutoTrimState.BRAKING
-                        settledDurationSec = 0.0
-                        releaseIntegralDeg = integralCorrectionDeg
-                        releaseSpeedTargetCmPerSec = appliedSpeedTarget
-                        releaseRampComplete = abs(appliedSpeedTarget) <= RELEASE_SPEED_EPSILON
-                        updateBrakingIntegral(appliedSpeedTarget)
-                    } else {
-                        autoTrimState = AutoTrimState.YAW_SETTLING
+                AutoTrimState.MANEUVER -> {
+                    autoTrimState = AutoTrimState.BRAKE_TO_ZERO
+                    settledDurationSec = 0.0
+                }
+                AutoTrimState.BRAKE_TO_ZERO -> {
+                    if (physicalStopCandidate) {
+                        integralCorrectionDeg = restTrimDeg
+                        autoTrimState = AutoTrimState.SETTLING
                         settledDurationSec = 0.0
                     }
                 }
-                AutoTrimState.BRAKING -> {
-                    if (!releaseRampComplete) {
-                        updateBrakingIntegral(appliedSpeedTarget)
+                AutoTrimState.SETTLING -> {
+                    if (abs(filtered) > config.speedQuietThresholdCmPerSec) {
+                        autoTrimState = AutoTrimState.BRAKE_TO_ZERO
                         settledDurationSec = 0.0
                     } else if (quiet) {
-                        settledDurationSec += dtSec
+                        settledDurationSec += feedbackDtSec
                         if (settledDurationSec >= config.speedQuietDurationMs / 1_000.0) {
-                            autoTrimState = AutoTrimState.SETTLED
-                        }
-                    } else {
-                        settledDurationSec = 0.0
-                        integralCorrectionDeg = restTrimDeg
-                    }
-                }
-                AutoTrimState.YAW_SETTLING -> {
-                    // Unlike translation braking, yaw release must not reset
-                    // the integral: it may contain the compensation needed to
-                    // cancel a longitudinal bias induced by the rotation.
-                    if (yawSettled) {
-                        settledDurationSec += dtSec
-                        if (settledDurationSec >= config.speedQuietDurationMs / 1_000.0) {
-                            autoTrimState = AutoTrimState.SETTLED
+                            autoTrimState = AutoTrimState.REST
+                            restTrimDeg = integralCorrectionDeg
                         }
                     } else {
                         settledDurationSec = 0.0
                     }
                 }
-                AutoTrimState.SETTLED -> {
-                    // Before the first user-commanded movement there is no
-                    // checkpoint to protect. Keep the initial state SETTLED
-                    // so the integrator can learn the equilibrium from a
-                    // non-zero measured drift. Once a checkpoint exists,
-                    // leaving the quiet band enters BRAKING and freezes it.
-                    if (!quiet && hasRestCheckpoint) {
-                        autoTrimState = AutoTrimState.BRAKING
-                        settledDurationSec = 0.0
-                        integralCorrectionDeg = restTrimDeg
-                    }
-                }
+                AutoTrimState.REST -> Unit
             }
         }
         val error = appliedSpeedTarget - filtered
@@ -397,6 +333,7 @@ class VelocityOuterLoop(initialConfig: RobotConfig) {
                 stale = false,
                 feedbackSequence = feedback.sequence,
                 feedbackAgeMs = ageNs / 1_000_000.0,
+                feedbackDtMs = feedbackDtSec * 1_000.0,
                 leftRawStepsPerSec = feedback.leftStepsPerSec,
                 rightRawStepsPerSec = feedback.rightStepsPerSec,
                 leftCmPerSec = left,
@@ -411,14 +348,16 @@ class VelocityOuterLoop(initialConfig: RobotConfig) {
                 effectiveTargetDeg = config.targetDeg,
                 autoTrimState = autoTrimState.name,
                 restTrimDeg = restTrimDeg,
+                restCheckpointDeg = restTrimDeg,
                 settledDurationSec = settledDurationSec,
+                physicalStopCandidate = physicalStopCandidate,
                 quiet = quiet,
             ).also { lastOutput = it }
         }
 
         val proportionalCorrection = config.speedKevDegPerCmPerSec * error
         val integralCandidate = (integralCorrectionDeg +
-            config.speedIntegralGainDegPerCmPerSecSec * error * dtSec)
+            config.speedIntegralGainDegPerCmPerSecSec * error * feedbackDtSec)
             .coerceIn(-config.speedTargetAngleLimitDeg, config.speedTargetAngleLimitDeg)
         val rawCorrection = proportionalCorrection + integralCandidate
         val correction = rawCorrection.coerceIn(
@@ -426,14 +365,23 @@ class VelocityOuterLoop(initialConfig: RobotConfig) {
             config.speedTargetAngleLimitDeg,
         )
         val correctionSaturated = rawCorrection != correction
+        val rawTargetCandidate = config.targetDeg + rawCorrection
+        val absoluteTargetCandidate = rawTargetCandidate.coerceIn(
+            -config.speedAbsoluteAngleLimitDeg,
+            config.speedAbsoluteAngleLimitDeg,
+        )
+        val absoluteTargetSaturated = absoluteTargetCandidate != rawTargetCandidate
         val integrationWouldWorsenSaturation =
-            (rawCorrection > config.speedTargetAngleLimitDeg && error > 0.0) ||
-                (rawCorrection < -config.speedTargetAngleLimitDeg && error < 0.0)
-        val allowIntegralUpdate = autoTrimState != AutoTrimState.BRAKING
-        if (allowIntegralUpdate && (!correctionSaturated || !integrationWouldWorsenSaturation)) {
+            (correctionSaturated && ((rawCorrection > correction && error > 0.0) ||
+                (rawCorrection < correction && error < 0.0))) ||
+                (absoluteTargetSaturated && ((rawTargetCandidate > absoluteTargetCandidate && error > 0.0) ||
+                    (rawTargetCandidate < absoluteTargetCandidate && error < 0.0)))
+        val allowIntegralUpdate = autoTrimState != AutoTrimState.SETTLING &&
+            newFeedback && !feedbackWasStale && feedbackDtSec > 0.0
+        if (allowIntegralUpdate && !integrationWouldWorsenSaturation) {
             integralCorrectionDeg = integralCandidate
         }
-        if (autoTrimState == AutoTrimState.SETTLED) {
+        if (autoTrimState == AutoTrimState.REST) {
             restTrimDeg = integralCorrectionDeg
         }
         val rawTarget = config.targetDeg + correction
@@ -453,6 +401,7 @@ class VelocityOuterLoop(initialConfig: RobotConfig) {
             stale = false,
             feedbackSequence = feedback.sequence,
             feedbackAgeMs = ageNs / 1_000_000.0,
+            feedbackDtMs = feedbackDtSec * 1_000.0,
             leftRawStepsPerSec = feedback.leftStepsPerSec,
             rightRawStepsPerSec = feedback.rightStepsPerSec,
             leftCmPerSec = left,
@@ -463,13 +412,16 @@ class VelocityOuterLoop(initialConfig: RobotConfig) {
             appliedTargetCmPerSec = appliedSpeedTarget,
             speedCommandSlewLimited = speedCommandSlewLimited,
             errorCmPerSec = error,
+            proportionalCorrectionDeg = proportionalCorrection,
             correctionDeg = correction,
             integralCorrectionDeg = integralCorrectionDeg,
             trimDeg = config.targetDeg,
             effectiveTargetDeg = effective,
             autoTrimState = autoTrimState.name,
             restTrimDeg = restTrimDeg,
+            restCheckpointDeg = restTrimDeg,
             settledDurationSec = settledDurationSec,
+            physicalStopCandidate = physicalStopCandidate,
             quiet = quiet,
             saturated = correctionSaturated || absoluteTarget != rawTarget,
             slewLimited = effective != absoluteTarget,
@@ -510,6 +462,12 @@ class VelocityOuterLoop(initialConfig: RobotConfig) {
         dtSec: Double,
         initializeAtDesired: Boolean,
     ): Double {
+        if (abs(desired) <= COMMAND_EPSILON) {
+            // Releasing the command is an immediate stop request. The slew is
+            // retained for acceleration, never for delaying braking.
+            currentSpeedTargetCmPerSec = 0.0
+            return 0.0
+        }
         if (currentSpeedTargetCmPerSec == null && initializeAtDesired) {
             currentSpeedTargetCmPerSec = desired
             return desired
@@ -526,24 +484,6 @@ class VelocityOuterLoop(initialConfig: RobotConfig) {
         return next
     }
 
-    /** Transfers movement-only integral bias to the rest checkpoint smoothly. */
-    private fun updateBrakingIntegral(appliedSpeedTarget: Double) {
-        if (releaseRampComplete) {
-            integralCorrectionDeg = restTrimDeg
-            return
-        }
-        val releaseMagnitude = abs(releaseSpeedTargetCmPerSec)
-        val lambda = if (releaseMagnitude > RELEASE_SPEED_EPSILON) {
-            (abs(appliedSpeedTarget) / releaseMagnitude).coerceIn(0.0, 1.0)
-        } else 0.0
-        integralCorrectionDeg = restTrimDeg +
-            lambda * (releaseIntegralDeg - restTrimDeg)
-        if (abs(appliedSpeedTarget) <= RELEASE_SPEED_EPSILON) {
-            releaseRampComplete = true
-            integralCorrectionDeg = restTrimDeg
-        }
-    }
-
     private fun initialTargetDeg(): Double = if (config.speedLoopEnabled) {
         config.targetDeg.coerceIn(-config.speedAbsoluteAngleLimitDeg, config.speedAbsoluteAngleLimitDeg)
     } else config.targetDeg
@@ -557,9 +497,7 @@ class VelocityOuterLoop(initialConfig: RobotConfig) {
         const val QUIET_PITCH_RATE_THRESHOLD_DEG_PER_SEC = 3.0
         const val QUIET_YAW_TARGET_THRESHOLD_DEG_PER_SEC = 1.0
         const val QUIET_YAW_RATE_THRESHOLD_DEG_PER_SEC = 3.0
-        const val STALE_TARGET_HOLD_SEC = 0.05
         const val COMMAND_EPSILON = 1e-6
-        const val RELEASE_SPEED_EPSILON = 1e-9
     }
 
 }

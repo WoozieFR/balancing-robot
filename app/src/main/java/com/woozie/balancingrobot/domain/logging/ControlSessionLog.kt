@@ -36,6 +36,7 @@ data class ControlLogRecord(
     val speedLoopEnabled: Boolean? = null,
     val speedFeedbackSequence: Long? = null,
     val speedFeedbackAgeMs: Double? = null,
+    val speedFeedbackDtMs: Double? = null,
     val speedLeftRawStepsPerSec: Int? = null,
     val speedRightRawStepsPerSec: Int? = null,
     val speedLeftCmPerSec: Double? = null,
@@ -43,9 +44,16 @@ data class ControlLogRecord(
     val speedMeanCmPerSec: Double? = null,
     val speedFilteredCmPerSec: Double? = null,
     val speedTargetCmPerSec: Double? = null,
+    val speedAppliedTargetCmPerSec: Double? = null,
     val speedErrorCmPerSec: Double? = null,
     val speedCorrectionDeg: Double? = null,
+    val speedProportionalCorrectionDeg: Double? = null,
     val speedIntegralCorrectionDeg: Double? = null,
+    val speedRestCheckpointDeg: Double? = null,
+    val speedPhysicalStopCandidate: Boolean? = null,
+    val speedQuiet: Boolean? = null,
+    val speedSettledDurationSec: Double? = null,
+    val speedAutoTrimState: String? = null,
     val speedTargetSlewLimited: Boolean? = null,
     val speedStale: Boolean? = null,
     val speedTargetSaturated: Boolean? = null,
@@ -113,10 +121,11 @@ class ControlSessionLog(private val capacity: Int = 100_000) {
                 "imu_timeout_ms,fall_angle_deg,fall_duration_ms,manual_timeout_ms,inhibit_safety_auto_disarm,log_capacity," +
                 "web_port,error_deg,raw_command,bounded_command,saturated,motor_command_0," +
                 "motor_command_1,yaw_target_dps,yaw_rate_dps,yaw_error_dps,turn_command,control_latency_ms," +
-                "speed_feedback_sequence,speed_feedback_age_ms," +
+                "speed_feedback_sequence,speed_feedback_age_ms,speed_feedback_dt_ms,speed_requested_cmps," +
                 "speed_left_raw_steps_per_s,speed_right_raw_steps_per_s,speed_left_cmps,speed_right_cmps," +
-                "speed_mean_cmps,speed_filtered_cmps,speed_error_cmps,speed_correction_deg," +
-                "speed_integral_correction_deg,speed_target_slew_limited,speed_stale," +
+                "speed_applied_cmps,speed_mean_cmps,speed_filtered_cmps,speed_error_cmps,speed_p_correction_deg,speed_correction_deg," +
+                "speed_integral_correction_deg,speed_rest_checkpoint_deg,speed_physical_stop_candidate," +
+                "speed_quiet,speed_settled_duration_sec,speed_state,speed_target_slew_limited,speed_stale," +
                 "speed_target_saturated,speed_loop_actual_hz,speed_feedback_actual_hz,arm_state,sample_status," +
                 "gamepad_source,gamepad_neutral_reason,gamepad_command_age_ms,gamepad_sequence," +
                 "gamepad_deadman_held,gamepad_speed_target_cmps,gamepad_yaw_target_dps",
@@ -192,15 +201,24 @@ class ControlSessionLog(private val capacity: Int = 100_000) {
                 .appendNullable(record.controlLatencyMs).append(',')
                 .append(record.speedFeedbackSequence ?: "").append(',')
                 .appendNullable(record.speedFeedbackAgeMs).append(',')
+                .appendNullable(record.speedFeedbackDtMs).append(',')
+                .appendNullable(record.speedTargetCmPerSec).append(',')
                 .append(record.speedLeftRawStepsPerSec ?: "").append(',')
                 .append(record.speedRightRawStepsPerSec ?: "").append(',')
                 .appendNullable(record.speedLeftCmPerSec).append(',')
                 .appendNullable(record.speedRightCmPerSec).append(',')
+                .appendNullable(record.speedAppliedTargetCmPerSec).append(',')
                 .appendNullable(record.speedMeanCmPerSec).append(',')
                 .appendNullable(record.speedFilteredCmPerSec).append(',')
                 .appendNullable(record.speedErrorCmPerSec).append(',')
+                .appendNullable(record.speedProportionalCorrectionDeg).append(',')
                 .appendNullable(record.speedCorrectionDeg).append(',')
                 .appendNullable(record.speedIntegralCorrectionDeg).append(',')
+                .appendNullable(record.speedRestCheckpointDeg).append(',')
+                .append(record.speedPhysicalStopCandidate ?: "").append(',')
+                .append(record.speedQuiet ?: "").append(',')
+                .appendNullable(record.speedSettledDurationSec).append(',')
+                .append(record.speedAutoTrimState ?: "").append(',')
                 .append(record.speedTargetSlewLimited ?: "").append(',')
                 .append(record.speedStale ?: "").append(',')
                 .append(record.speedTargetSaturated ?: "").append(',')

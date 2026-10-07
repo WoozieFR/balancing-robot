@@ -1208,6 +1208,7 @@ class RobotControlService : Service() {
                     stale = output.stale,
                     feedbackSequence = output.feedbackSequence,
                     feedbackAgeMs = output.feedbackAgeMs,
+                    feedbackDtMs = output.feedbackDtMs,
                     feedbackRateHz = speedFeedbackActualRateHz,
                     loopRateHz = speedLoopActualRateHz,
                     leftRawStepsPerSec = output.leftRawStepsPerSec,
@@ -1220,13 +1221,16 @@ class RobotControlService : Service() {
                     appliedTargetCmPerSec = output.appliedTargetCmPerSec,
                     speedCommandSlewLimited = output.speedCommandSlewLimited,
                     errorCmPerSec = output.errorCmPerSec,
+                    proportionalCorrectionDeg = output.proportionalCorrectionDeg,
                     correctionDeg = output.correctionDeg,
                     integralCorrectionDeg = output.integralCorrectionDeg,
                     trimDeg = output.trimDeg,
                     effectiveTargetDeg = output.effectiveTargetDeg,
                     autoTrimState = output.autoTrimState,
                     restTrimDeg = output.restTrimDeg,
+                    restCheckpointDeg = output.restCheckpointDeg,
                     settledDurationSec = output.settledDurationSec,
+                    physicalStopCandidate = output.physicalStopCandidate,
                     quiet = output.quiet,
                     saturated = output.saturated,
                     slewLimited = output.slewLimited,
@@ -1287,6 +1291,7 @@ class RobotControlService : Service() {
                 speedLoopEnabled = speedOutput?.enabled,
                 speedFeedbackSequence = speedOutput?.feedbackSequence,
                 speedFeedbackAgeMs = speedOutput?.feedbackAgeMs,
+                speedFeedbackDtMs = speedOutput?.feedbackDtMs,
                 speedLeftRawStepsPerSec = speedOutput?.leftRawStepsPerSec,
                 speedRightRawStepsPerSec = speedOutput?.rightRawStepsPerSec,
                 speedLeftCmPerSec = speedOutput?.leftCmPerSec,
@@ -1294,9 +1299,16 @@ class RobotControlService : Service() {
                 speedMeanCmPerSec = speedOutput?.meanCmPerSec,
                 speedFilteredCmPerSec = speedOutput?.filteredCmPerSec,
                 speedTargetCmPerSec = speedOutput?.targetCmPerSec,
+                speedAppliedTargetCmPerSec = speedOutput?.appliedTargetCmPerSec,
                 speedErrorCmPerSec = speedOutput?.errorCmPerSec,
+                speedProportionalCorrectionDeg = speedOutput?.proportionalCorrectionDeg,
                 speedCorrectionDeg = speedOutput?.correctionDeg,
                 speedIntegralCorrectionDeg = speedOutput?.integralCorrectionDeg,
+                speedRestCheckpointDeg = speedOutput?.restCheckpointDeg,
+                speedPhysicalStopCandidate = speedOutput?.physicalStopCandidate,
+                speedQuiet = speedOutput?.quiet,
+                speedSettledDurationSec = speedOutput?.settledDurationSec,
+                speedAutoTrimState = speedOutput?.autoTrimState,
                 speedTargetSlewLimited = speedOutput?.slewLimited,
                 speedStale = speedOutput?.stale,
                 speedTargetSaturated = speedOutput?.saturated,
@@ -1404,12 +1416,14 @@ class RobotControlService : Service() {
             put("wheelDiameterMm", config.wheelDiameterMm)
             put("driveRatio", config.driveRatio)
             put("speedFeedbackStale", speed.stale)
+            put("speedRequestedTargetCmPerSec", speed.targetCmPerSec)
             put("speedAppliedTargetCmPerSec", speed.appliedTargetCmPerSec)
             put("speedCommandSlewLimited", speed.speedCommandSlewLimited)
             put("speedFeedbackRateHz", speed.feedbackRateHz)
             put("speedLoopActualRateHz", speed.loopRateHz)
             speed.feedbackSequence?.let { put("speedFeedbackSequence", it) }
             speed.feedbackAgeMs?.let { put("speedFeedbackAgeMs", it) }
+            speed.feedbackDtMs?.let { put("speedFeedbackDtMs", it) }
             speed.leftRawStepsPerSec?.let { put("speedLeftRawStepsPerSec", it) }
             speed.rightRawStepsPerSec?.let { put("speedRightRawStepsPerSec", it) }
             speed.leftCmPerSec?.let { put("speedLeftCmPerSec", it) }
@@ -1418,10 +1432,13 @@ class RobotControlService : Service() {
             speed.filteredCmPerSec?.let { put("speedFilteredCmPerSec", it) }
             speed.errorCmPerSec?.let { put("speedErrorCmPerSec", it) }
             put("speedCorrectionDeg", speed.correctionDeg)
+            put("speedProportionalCorrectionDeg", speed.proportionalCorrectionDeg)
             put("speedIntegralCorrectionDeg", speed.integralCorrectionDeg)
             put("speedAutoTrimState", speed.autoTrimState)
             put("speedRestTrimDeg", speed.restTrimDeg)
+            put("speedRestCheckpointDeg", speed.restCheckpointDeg)
             put("speedSettledDurationSec", speed.settledDurationSec)
+            put("speedPhysicalStopCandidate", speed.physicalStopCandidate)
             put("speedQuiet", speed.quiet)
             put("speedEffectiveTargetDeg", speed.effectiveTargetDeg)
             put("speedTargetSaturated", speed.saturated)

@@ -56,15 +56,17 @@ fun mixDifferential(
     commandLimit: Int,
 ): DifferentialMix {
     require(commandLimit >= 0) { "commandLimit must be non-negative" }
-    val leftRaw = balanceCommand.toLong() + turnCommand.toLong()
-    val rightRaw = balanceCommand.toLong() - turnCommand.toLong()
+    val yawHeadroom = (commandLimit - kotlin.math.abs(balanceCommand)).coerceAtLeast(0)
+    val appliedTurn = turnCommand.coerceIn(-yawHeadroom, yawHeadroom)
+    val leftRaw = balanceCommand.toLong() + appliedTurn.toLong()
+    val rightRaw = balanceCommand.toLong() - appliedTurn.toLong()
     val limit = commandLimit.toLong()
     val left = leftRaw.coerceIn(-limit, limit).toInt()
     val right = rightRaw.coerceIn(-limit, limit).toInt()
     return DifferentialMix(
         left = left,
         right = right,
-        saturated = leftRaw !in -limit..limit || rightRaw !in -limit..limit,
+        saturated = appliedTurn != turnCommand || leftRaw !in -limit..limit || rightRaw !in -limit..limit,
     )
 }
 

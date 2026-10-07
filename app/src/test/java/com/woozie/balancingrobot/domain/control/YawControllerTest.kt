@@ -40,7 +40,7 @@ class YawControllerTest {
         val mix = mixDifferential(90, 30, 100)
 
         assertEquals(100, mix.left)
-        assertEquals(60, mix.right)
+        assertEquals(80, mix.right)
         assertTrue(mix.saturated)
     }
 }

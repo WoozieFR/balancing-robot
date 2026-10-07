@@ -80,8 +80,7 @@ class VelocityOuterLoopTest {
         val recovered = loop.step(1_140_000_000L, feedback(2, 3_000, 3_000, 1_135_000_000L))
 
         assertTrue(stale.stale)
-        assertTrue(stale.effectiveTargetDeg < valid.effectiveTargetDeg)
-        assertTrue(stale.effectiveTargetDeg > 6.7)
+        assertEquals(valid.effectiveTargetDeg, stale.effectiveTargetDeg, 1e-9)
         assertFalse(recovered.stale)
         assertEquals(recovered.meanCmPerSec!!, recovered.filteredCmPerSec!!, 1e-9)
     }
@@ -110,12 +109,14 @@ class VelocityOuterLoopTest {
             speedIntegralGainDegPerCmPerSecSec = 1.0,
         ))
         loop.step(1_000_000_000L, feedback(1, 0, 0, 995_000_000L))
-        val accumulated = loop.step(1_020_000_000L, feedback(1, 0, 0, 1_015_000_000L))
+        val accumulated = loop.step(1_020_000_000L, feedback(2, 0, 0, 1_015_000_000L))
         assertTrue(accumulated.integralCorrectionDeg > 0.0)
 
         loop.updateConfig(config(speedTargetCmPerSec = 0.0, speedIntegralGainDegPerCmPerSecSec = 1.0))
-        val retained = loop.step(1_040_000_000L, feedback(2, 0, 0, 1_035_000_000L))
-        assertEquals(accumulated.integralCorrectionDeg, retained.integralCorrectionDeg, 1e-9)
+        val retained = loop.step(1_040_000_000L, feedback(3, 1_000, 1_000, 1_035_000_000L))
+        assertEquals(0.0, retained.appliedTargetCmPerSec, 1e-9)
+        assertEquals("BRAKE_TO_ZERO", retained.autoTrimState)
+        assertTrue(retained.integralCorrectionDeg < accumulated.integralCorrectionDeg)
     }
 
     @Test
@@ -132,13 +133,9 @@ class VelocityOuterLoopTest {
         assertTrue(movingAgain.integralCorrectionDeg > moving.integralCorrectionDeg)
 
         val halfway = loop.step(1_060_000_000L, feedback(4, 0, 0, 1_055_000_000L), 0.0)
-        assertEquals(0.2, halfway.appliedTargetCmPerSec, 1e-9)
-        assertEquals(
-            movingAgain.integralCorrectionDeg / 2.0,
-            halfway.integralCorrectionDeg,
-            1e-9,
-        )
-        assertTrue(halfway.integralCorrectionDeg > 0.0)
+        assertEquals(0.0, halfway.appliedTargetCmPerSec, 1e-9)
+        assertEquals("SETTLING", halfway.autoTrimState)
+        assertEquals(0.0, halfway.integralCorrectionDeg, 1e-9)
 
         val complete = loop.step(1_080_000_000L, feedback(5, 0, 0, 1_075_000_000L), 0.0)
         assertEquals(0.0, complete.appliedTargetCmPerSec, 1e-9)
@@ -168,17 +165,17 @@ class VelocityOuterLoopTest {
             yawTargetDegPerSec = 60.0,
             yawRateDegPerSec = 20.0,
         )
-        assertEquals("MOVING", duringYaw.autoTrimState)
+        assertEquals("MANEUVER", duringYaw.autoTrimState)
         assertTrue(duringYaw.integralCorrectionDeg < 0.0)
 
         val releasedYaw = loop.step(
             1_040_000_000L,
-            feedback(3, 100, 100, 1_035_000_000L),
+            feedback(3, 1_000, 1_000, 1_035_000_000L),
             targetCmPerSec = 0.0,
             yawTargetDegPerSec = 0.0,
             yawRateDegPerSec = 0.0,
         )
-        assertEquals("YAW_SETTLING", releasedYaw.autoTrimState)
+        assertEquals("BRAKE_TO_ZERO", releasedYaw.autoTrimState)
         assertTrue(releasedYaw.integralCorrectionDeg < 0.0)
 
         var nowNs = 1_040_000_000L
@@ -195,8 +192,8 @@ class VelocityOuterLoopTest {
                 yawRateDegPerSec = 0.0,
             )
         }
-        assertEquals("SETTLED", settled.autoTrimState)
-        assertTrue(settled.integralCorrectionDeg < 0.0)
+        assertEquals("REST", settled.autoTrimState)
+        assertEquals(0.0, settled.integralCorrectionDeg, 1e-9)
     }
 
     @Test
@@ -214,18 +211,15 @@ class VelocityOuterLoopTest {
 
         val released = loop.step(1_060_000_000L, feedback(4, 1_000, 1_000, 1_055_000_000L), 0.0)
         val rolling = loop.step(1_080_000_000L, feedback(5, 1_000, 1_000, 1_075_000_000L), 0.0)
-        assertEquals(
-            "rest=${rest.integralCorrectionDeg}, released=${released.integralCorrectionDeg}",
-            rest.integralCorrectionDeg,
-            released.integralCorrectionDeg,
-            1e-9,
-        )
-        assertEquals(rest.integralCorrectionDeg, rolling.integralCorrectionDeg, 1e-9)
+        assertEquals("BRAKE_TO_ZERO", released.autoTrimState)
+        assertTrue(released.integralCorrectionDeg != rest.integralCorrectionDeg)
+        assertEquals("BRAKE_TO_ZERO", rolling.autoTrimState)
 
         val crossing = loop.step(1_100_000_000L, feedback(6, 0, 0, 1_095_000_000L), 0.0)
         val afterCrossing = loop.step(1_120_000_000L, feedback(7, 1_000, 1_000, 1_115_000_000L), 0.0)
+        assertEquals("SETTLING", crossing.autoTrimState)
         assertEquals(rest.integralCorrectionDeg, crossing.integralCorrectionDeg, 1e-9)
-        assertEquals(rest.integralCorrectionDeg, afterCrossing.integralCorrectionDeg, 1e-9)
+        assertTrue(afterCrossing.integralCorrectionDeg != rest.integralCorrectionDeg)
 
         var nowNs = 1_120_000_000L
         var sequence = 7L
@@ -278,7 +272,7 @@ class VelocityOuterLoopTest {
         )
 
         assertTrue(learned.integralCorrectionDeg < 0.0)
-        assertEquals("SETTLED", learned.autoTrimState)
+        assertEquals("REST", learned.autoTrimState)
     }
 
     @Test
@@ -324,7 +318,7 @@ class VelocityOuterLoopTest {
         }
         assertTrue(kotlin.math.abs(output.meanCmPerSec!!) < 0.5)
         assertTrue(output.quiet)
-        assertEquals("BRAKING", output.autoTrimState)
+        assertEquals("SETTLING", output.autoTrimState)
         assertTrue(output.settledDurationSec < 2.0)
     }
 
@@ -367,8 +361,8 @@ class VelocityOuterLoopTest {
             feedback(14, 100, 100, 1_315_000_000L),
             0.0,
         )
-        assertEquals("BRAKING", recovered.autoTrimState)
-        assertEquals(0.02, recovered.settledDurationSec, 1e-9)
+        assertEquals("SETTLING", recovered.autoTrimState)
+        assertEquals(0.0, recovered.settledDurationSec, 1e-9)
     }
 
     @Test
@@ -414,6 +408,100 @@ class VelocityOuterLoopTest {
         assertEquals(5.0, changed.targetCmPerSec, 1e-9)
         assertEquals(0.2, changed.appliedTargetCmPerSec, 1e-9)
         assertTrue(changed.speedCommandSlewLimited)
+    }
+
+    @Test
+    fun releasingYawWhileTranslationContinuesDoesNotResetTheManeuver() {
+        val loop = VelocityOuterLoop(config(
+            speedTargetCmPerSec = 5.0,
+            speedFilterAlpha = 1.0,
+            speedIntegralGainDegPerCmPerSecSec = 1.0,
+        ))
+        loop.step(
+            1_000_000_000L,
+            feedback(1, 0, 0, 995_000_000L),
+            targetCmPerSec = 5.0,
+            yawTargetDegPerSec = 60.0,
+        )
+        val duringCombined = loop.step(
+            1_020_000_000L,
+            feedback(2, 0, 0, 1_015_000_000L),
+            targetCmPerSec = 5.0,
+            yawTargetDegPerSec = 60.0,
+        )
+        val yawReleased = loop.step(
+            1_040_000_000L,
+            feedback(3, 1_000, 1_000, 1_035_000_000L),
+            targetCmPerSec = 5.0,
+            yawTargetDegPerSec = 0.0,
+        )
+
+        assertEquals("MANEUVER", yawReleased.autoTrimState)
+        assertTrue(yawReleased.integralCorrectionDeg != duringCombined.integralCorrectionDeg)
+    }
+
+    @Test
+    fun releasingTranslationWhileYawContinuesSetsZeroSpeedButKeepsIntegralActive() {
+        val loop = VelocityOuterLoop(config(
+            speedTargetCmPerSec = 5.0,
+            speedFilterAlpha = 1.0,
+            speedIntegralGainDegPerCmPerSecSec = 1.0,
+        ))
+        loop.step(
+            1_000_000_000L,
+            feedback(1, 0, 0, 995_000_000L),
+            targetCmPerSec = 5.0,
+            yawTargetDegPerSec = 60.0,
+        )
+        val beforeRelease = loop.step(
+            1_020_000_000L,
+            feedback(2, 0, 0, 1_015_000_000L),
+            targetCmPerSec = 5.0,
+            yawTargetDegPerSec = 60.0,
+        )
+        val translationReleased = loop.step(
+            1_040_000_000L,
+            feedback(3, 1_000, 1_000, 1_035_000_000L),
+            targetCmPerSec = 0.0,
+            yawTargetDegPerSec = 60.0,
+        )
+
+        assertEquals(0.0, translationReleased.appliedTargetCmPerSec, 1e-9)
+        assertEquals("MANEUVER", translationReleased.autoTrimState)
+        assertTrue(translationReleased.integralCorrectionDeg != beforeRelease.integralCorrectionDeg)
+    }
+
+    @Test
+    fun settlingExitReactivatesIntegralInsteadOfFreezingAtCheckpoint() {
+        val loop = VelocityOuterLoop(config(
+            speedTargetCmPerSec = 5.0,
+            speedFilterAlpha = 1.0,
+            speedIntegralGainDegPerCmPerSecSec = 1.0,
+        ))
+        loop.step(1_000_000_000L, feedback(1, 0, 0, 995_000_000L), 5.0)
+        val moving = loop.step(1_020_000_000L, feedback(2, 0, 0, 1_015_000_000L), 5.0)
+        val release = loop.step(1_040_000_000L, feedback(3, 1_000, 1_000, 1_035_000_000L), 0.0)
+        assertEquals("BRAKE_TO_ZERO", release.autoTrimState)
+        val settled = loop.step(1_060_000_000L, feedback(4, 0, 0, 1_055_000_000L), 0.0)
+        assertEquals("SETTLING", settled.autoTrimState)
+
+        val departed = loop.step(1_080_000_000L, feedback(5, 1_000, 1_000, 1_075_000_000L), 0.0)
+        assertEquals("BRAKE_TO_ZERO", departed.autoTrimState)
+        assertTrue(departed.integralCorrectionDeg != settled.integralCorrectionDeg)
+        assertTrue(moving.integralCorrectionDeg != 0.0)
+    }
+
+    @Test
+    fun integralDtComesFromNewWheelFeedbackTimestamps() {
+        val loop = VelocityOuterLoop(config(
+            speedTargetCmPerSec = 5.0,
+            speedFilterAlpha = 1.0,
+            speedIntegralGainDegPerCmPerSecSec = 1.0,
+        ))
+        loop.step(1_000_000_000L, feedback(1, 0, 0, 995_000_000L), 5.0)
+        val output = loop.step(1_040_000_000L, feedback(2, 0, 0, 1_015_000_000L), 5.0)
+
+        assertEquals(20.0, output.feedbackDtMs!!, 1e-9)
     }
 
     @Test

@@ -1290,14 +1290,17 @@ private fun BalanceTuningCard(
     Text(
         "Boucle ${number(speedLoop.loopRateHz)} Hz · retour ${number(speedLoop.feedbackRateHz)} Hz · " +
             "erreur ${number(speedLoop.errorCmPerSec)} cm/s · correction ${number(speedLoop.correctionDeg)}° · " +
+            "P ${number(speedLoop.proportionalCorrectionDeg)}° · I ${number(speedLoop.integralCorrectionDeg)}° · " +
             "cible PD ${number(speedLoop.effectiveTargetDeg)}° · auto-trim ${speedLoop.autoTrimState}" +
-            (if (speedLoop.autoTrimState == "BRAKING") {
+            (if (speedLoop.autoTrimState == "BRAKE_TO_ZERO") {
                 " (${number(speedLoop.restTrimDeg)}° mémorisés)"
-            } else if (speedLoop.autoTrimState == "YAW_SETTLING") {
-                " (${number(speedLoop.settledDurationSec)} s après yaw)"
-            } else if (speedLoop.autoTrimState == "SETTLED") {
+            } else if (speedLoop.autoTrimState == "SETTLING") {
+                " (${number(speedLoop.settledDurationSec)} s de stabilisation)"
+            } else if (speedLoop.autoTrimState == "REST") {
                 " (${number(speedLoop.settledDurationSec)} s silencieux)"
             } else "") +
+            " · checkpoint ${number(speedLoop.restCheckpointDeg)}° · arrêt physique " +
+            if (speedLoop.physicalStopCandidate) "candidat" else "non" +
             (if (!speedLoop.enabled) " · DÉSACTIVÉE" else if (speedLoop.stale) {
                 " · RETOUR PÉRIMÉ (cible gelée)"
             } else if (speedLoop.saturated) " · CIBLE SATURÉE" else ""),
