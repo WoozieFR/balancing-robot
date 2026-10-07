@@ -1,7 +1,13 @@
 package com.woozie.balancingrobot.service
 
+import com.woozie.balancingrobot.domain.model.AttitudeFilterMode
+
 data class ImuDiagnosticState(
     val requestedRateHz: Int = 200,
+    val attitudeFilterMode: AttitudeFilterMode = AttitudeFilterMode.LEGACY_COMPLEMENTARY,
+    val activeAttitudeFilterMode: AttitudeFilterMode = AttitudeFilterMode.LEGACY_COMPLEMENTARY,
+    val attitudeEstimatorState: String = "INITIALIZING",
+    val attitudeEstimatorResetCount: Long = 0,
     val accelerometerAvailable: Boolean = false,
     val gyroscopeAvailable: Boolean = false,
     val accelerometerX: Double? = null,

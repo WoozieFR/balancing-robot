@@ -66,6 +66,12 @@
           <article class="card panel">
             <div class="panel-title"><h3>Filtre complémentaire</h3><span class="panel-index">01</span></div>
             <p class="panel-note">Fusion gyro / accélération avec les timestamps Android.</p>
+            <label class="parameter-row">Estimateur d'attitude
+              <select id="attitude-filter-mode">
+                <option value="LEGACY_COMPLEMENTARY">Complémentaire historique (scalaire)</option>
+                <option value="QUATERNION_COMPLEMENTARY">Complémentaire quaternion</option>
+              </select>
+            </label>
             <label class="parameter-row">Alpha filtre <output id="alpha-value">0.98</output><input id="alpha" type="range" min="0" max="1" step="0.01" value="0.98"></label>
             <label class="parameter-row">Offset zéro (°) <output id="zero-offset-value">0</output><input id="zero-offset" type="range" min="-180" max="180" step="0.1" value="0"></label>
             <div class="inline-fields"><label>Axe<select id="axis"><option value="X">X</option><option value="Y">Y</option><option value="Z">Z</option></select></label><label>Signe<select id="imu-sign"><option value="1">+1</option><option value="-1">−1</option></select></label></div>
@@ -126,7 +132,7 @@
       <section id="diagnostics" class="section-block" aria-labelledby="diagnostics-title">
         <div class="section-title"><div><span class="eyebrow">OBSERVABILITY</span><h2 id="diagnostics-title">Diagnostic & journal</h2></div></div>
         <div class="diagnostic-grid">
-          <article class="card panel"><div class="panel-title"><h3>IMU</h3><span class="panel-index">06</span></div><div class="diag-list"><div><span>cadence accel / gyro</span><b id="rates">— / —</b></div><div><span>dt effectif</span><b id="dt">—</b></div><div><span>jitter</span><b id="jitter">—</b></div><div><span>échantillons acceptés / rejetés</span><b id="samples">—</b></div><div><span>journal IMU</span><b id="journal">—</b></div></div></article>
+          <article class="card panel"><div class="panel-title"><h3>IMU</h3><span class="panel-index">06</span></div><div class="diag-list"><div><span>filtre / état</span><b id="attitude-filter-state">—</b></div><div><span>cadence accel / gyro</span><b id="rates">— / —</b></div><div><span>dt effectif</span><b id="dt">—</b></div><div><span>jitter</span><b id="jitter">—</b></div><div><span>échantillons acceptés / rejetés</span><b id="samples">—</b></div><div><span>journal IMU</span><b id="journal">—</b></div></div></article>
           <article class="card panel"><div class="panel-title"><h3>Session RAM</h3><span class="panel-index">07</span></div><div class="recording-state"><span class="recording-dot" id="recording-dot"></span><strong id="control-recording">arrêtée</strong><b id="control-recording-samples">0</b><small>échantillons</small></div><p class="panel-note">Le CSV capture les entrées, calculs intermédiaires et sorties moteur.</p><div class="button-row"><button id="start-recording" class="button secondary">Démarrer capture</button><button id="stop-recording" class="button ghost">Arrêter</button></div><a id="download-control-log" class="download-link" href="/control-log.csv" download="balancing-robot-control-session.csv">↓ Télécharger le CSV</a></article>
           <article class="card panel"><div class="panel-title"><h3>Manette PS4</h3><span class="panel-index">08</span></div><div class="diag-list"><div><span>mode</span><b id="gamepad-mode">inactif</b></div><div><span>périphérique</span><b id="gamepad-device">—</b></div><div><span>source</span><b id="gamepad-source">—</b></div><div><span>état entrée</span><b id="gamepad-reason">—</b></div><div><span>cibles effectives</span><b id="gamepad-targets">0 / 0</b></div><div><span>deadman</span><b id="gamepad-deadman">relâché</b></div></div><p class="panel-note">Diagnostic en lecture seule. Activation et réglages se font dans l'application Android.</p></article>
         </div>

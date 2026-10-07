@@ -101,6 +101,7 @@ const renderDiagnostics = (diagnostics) => {
   const armState = diagnostics.motorArmState || 'DISARMED';
   const balanceArmed = armState === 'BALANCE_ARMED';
   const manualArmed = armState === 'MANUAL_ARMED';
+  const attitudeFilterLocked = armState !== 'DISARMED' && armState !== 'READY';
 
   text('status', diagnostics.status || (serviceRunning ? 'Service actif' : 'Service arrêté'));
   text('run-badge', serviceRunning ? 'ACTIF' : 'ARRÊTÉ');
@@ -131,6 +132,10 @@ const renderDiagnostics = (diagnostics) => {
     : `gyro OK · âge ${number(diagnostics.gyroAgeMs, ' ms')}`;
   text('imu-signal', `${number(diagnostics.gyroRateHz, ' Hz')} · ${gyroState}`);
   text('angles', `${number(diagnostics.accelAngleDeg, '°')} / ${number(diagnostics.estimatedAngleDeg, '°')}`);
+  const filterLabel = diagnostics.attitudeFilterActive === 'QUATERNION_COMPLEMENTARY'
+    ? 'quaternion'
+    : 'historique';
+  text('attitude-filter-state', `${filterLabel} · ${diagnostics.attitudeEstimatorState || '—'}`);
 
   text('speed-left', number(diagnostics.speedLeftCmPerSec, ' cm/s'));
   text('speed-right', number(diagnostics.speedRightCmPerSec, ' cm/s'));
@@ -186,10 +191,11 @@ const renderDiagnostics = (diagnostics) => {
   if ($('start-recording')) $('start-recording').disabled = Boolean(diagnostics.controlRecording);
   if ($('stop-recording')) $('stop-recording').disabled = !diagnostics.controlRecording;
 
-  const guardedIds = ['axis', 'imu-sign', 'zero-offset', 'vmax', 'motor-control-mode', 'pwm-max', 'torque-limit', 'imu-timeout', 'fall-angle', 'fall-duration', 'manual-timeout', 'wheel-diameter', 'drive-ratio'];
+  const guardedIds = ['attitude-filter-mode', 'axis', 'imu-sign', 'zero-offset', 'vmax', 'motor-control-mode', 'pwm-max', 'torque-limit', 'imu-timeout', 'fall-angle', 'fall-duration', 'manual-timeout', 'wheel-diameter', 'drive-ratio'];
   guardedIds.forEach((id) => {
-    if ($(id)) $(id).disabled = balanceArmed;
-    if ($(`${id}-number`)) $(`${id}-number`).disabled = balanceArmed;
+    const locked = id === 'attitude-filter-mode' ? attitudeFilterLocked : balanceArmed;
+    if ($(id)) $(id).disabled = locked;
+    if ($(`${id}-number`)) $(`${id}-number`).disabled = locked;
   });
   const speedLimit = Number(diagnostics.speedTargetLimitCmPerSec);
   if ($('speed-target') && Number.isFinite(speedLimit) && speedLimit > 0) {
@@ -219,6 +225,14 @@ const renderDiagnostics = (diagnostics) => {
     .forEach(([id, value]) => syncRange(id, value));
   if ($('axis') && document.activeElement !== $('axis') && diagnostics.axis && !pendingParameters.has('axis')) $('axis').value = diagnostics.axis;
   if ($('imu-sign') && diagnostics.imuSign !== undefined && document.activeElement !== $('imu-sign') && !pendingParameters.has('imu-sign')) $('imu-sign').value = diagnostics.imuSign;
+  if ($('attitude-filter-mode') && diagnostics.attitudeFilterMode) {
+    const pendingFilter = pendingParameters.get('attitude-filter-mode');
+    if (pendingFilter !== undefined) {
+      if (valuesMatch(pendingFilter, diagnostics.attitudeFilterMode)) clearPendingParameter('attitude-filter-mode');
+    } else if (document.activeElement !== $('attitude-filter-mode')) {
+      $('attitude-filter-mode').value = diagnostics.attitudeFilterMode;
+    }
+  }
   if ($('speed-loop-enabled') && document.activeElement !== $('speed-loop-enabled') && !pendingParameters.has('speed-loop-enabled')) $('speed-loop-enabled').checked = Boolean(diagnostics.speedLoopEnabled);
   if ($('motor-control-mode') && document.activeElement !== $('motor-control-mode') && diagnostics.motorControlMode && !pendingParameters.has('motor-control-mode')) $('motor-control-mode').value = diagnostics.motorControlMode;
   if ($('safety-inhibition') && document.activeElement !== $('safety-inhibition')) {
@@ -282,6 +296,7 @@ const parameterKeyById = {
   'manual-timeout': 'manualTimeoutMs',
   'wheel-diameter': 'wheelDiameterMm',
   'drive-ratio': 'driveRatio',
+  'attitude-filter-mode': 'attitudeFilterMode',
   axis: 'axis',
   'imu-sign': 'imuSign',
   'motor-control-mode': 'motorControlMode',
@@ -373,6 +388,7 @@ parameterIds.forEach((id) => attachPrecisionInput($(id)));
 $('speed-loop-enabled').addEventListener('change', () => { markParameterPending('speed-loop-enabled', $('speed-loop-enabled').checked); clampTargetToAngleLimit(); scheduleParameterUpdate(); });
 $('axis').addEventListener('change', () => { markParameterPending('axis', $('axis').value); scheduleParameterUpdate(); });
 $('imu-sign').addEventListener('change', () => { markParameterPending('imu-sign', Number($('imu-sign').value)); scheduleParameterUpdate(); });
+$('attitude-filter-mode').addEventListener('change', () => { markParameterPending('attitude-filter-mode', $('attitude-filter-mode').value); scheduleParameterUpdate(); });
 $('motor-control-mode').addEventListener('change', () => { markParameterPending('motor-control-mode', $('motor-control-mode').value); scheduleParameterUpdate(); });
 $('safety-inhibition').addEventListener('change', () => { markParameterPending('safety-inhibition', $('safety-inhibition').checked); scheduleParameterUpdate(); });
 

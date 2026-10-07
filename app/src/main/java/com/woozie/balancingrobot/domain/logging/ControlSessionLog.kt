@@ -19,6 +19,9 @@ data class ControlLogRecord(
     val gyroRateDegPerSec: Double?,
     val dtSec: Double?,
     val config: RobotConfig,
+    val attitudeFilterMode: String? = null,
+    val attitudeEstimatorState: String? = null,
+    val attitudeEstimatorResetCount: Long? = null,
     val errorDeg: Double?,
     val rawCommand: Double?,
     val boundedCommand: Int?,
@@ -111,6 +114,7 @@ class ControlSessionLog(private val capacity: Int = 100_000) {
             "timestamp_ns,received_timestamp_ns,accel_x_mps2,accel_y_mps2,accel_z_mps2," +
                 "gyro_x_dps,gyro_y_dps,gyro_z_dps,accel_angle_deg,estimated_angle_deg," +
                 "gyro_rate_dps,dt_s,schema_version,axis,imu_sign,zero_offset_deg,alpha,angle_trim_deg,target_deg,kp,kd," +
+                "attitude_filter_mode,attitude_estimator_state,attitude_estimator_reset_count," +
                 "speed_loop_enabled,speed_target_cmps,speed_target_limit_cmps,speed_kev_deg_per_cmps," +
                 "speed_target_slew_rate_cm_per_sec,speed_loop_rate_hz,speed_filter_alpha,speed_target_angle_limit_deg," +
                 "speed_integral_gain_deg_per_cmps_s,speed_absolute_angle_limit_deg,speed_target_slew_rate_deg_per_sec," +
@@ -155,6 +159,9 @@ class ControlSessionLog(private val capacity: Int = 100_000) {
                 .appendNullable(record.effectiveTargetDeg).append(',')
                 .append(config.kp).append(',')
                 .append(config.kd).append(',')
+                .append(record.attitudeFilterMode ?: config.attitudeFilterMode.name).append(',')
+                .appendNullable(record.attitudeEstimatorState).append(',')
+                .appendNullable(record.attitudeEstimatorResetCount).append(',')
                 .append(record.speedLoopEnabled ?: config.speedLoopEnabled).append(',')
                 .append(record.speedTargetCmPerSec ?: config.speedTargetCmPerSec).append(',')
                 .append(config.speedTargetLimitCmPerSec).append(',')
@@ -244,6 +251,16 @@ class ControlSessionLog(private val capacity: Int = 100_000) {
 
     private fun StringBuilder.appendNullable(value: Double?): StringBuilder {
         if (value != null) append(String.format(Locale.US, "%.9f", value))
+        return this
+    }
+
+    private fun StringBuilder.appendNullable(value: Long?): StringBuilder {
+        if (value != null) append(value)
+        return this
+    }
+
+    private fun StringBuilder.appendNullable(value: String?): StringBuilder {
+        if (value != null) append(value.replace(',', ';'))
         return this
     }
 }

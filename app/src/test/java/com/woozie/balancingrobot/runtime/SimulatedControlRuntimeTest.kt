@@ -1,6 +1,7 @@
 package com.woozie.balancingrobot.runtime
 
 import com.woozie.balancingrobot.domain.model.RobotConfig
+import com.woozie.balancingrobot.domain.model.AttitudeFilterMode
 import com.woozie.balancingrobot.domain.model.MotorControlMode
 import com.woozie.balancingrobot.domain.model.Vector3
 import org.junit.Assert.assertEquals
@@ -90,5 +91,27 @@ class SimulatedControlRuntimeTest {
 
         assertEquals(10, step.control!!.turnCommand)
         assertEquals(listOf(10, -10), step.control.motorCommands)
+    }
+
+    @Test
+    fun quaternionModeFeedsTheSameControlContract() {
+        val runtime = SimulatedControlRuntime(
+            RobotConfig(
+                attitudeFilterMode = AttitudeFilterMode.QUATERNION_COMPLEMENTARY,
+                alpha = 1.0,
+                kp = 10.0,
+            ),
+        )
+
+        val step = runtime.step(
+            accel = Vector3(0.0, 0.0, 1.0),
+            gyroBodyRadPerSec = Vector3(0.0, 0.0, 0.0),
+            dtSec = 0.01,
+        )
+
+        assertNotNull(step.estimate)
+        assertEquals(AttitudeFilterMode.QUATERNION_COMPLEMENTARY, step.estimate!!.filterMode)
+        assertEquals(0.0, step.estimate.yawRateDegPerSec, 1e-9)
+        assertNotNull(step.control)
     }
 }

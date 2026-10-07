@@ -1,6 +1,7 @@
 package com.woozie.balancingrobot
 
 import android.Manifest
+import android.annotation.SuppressLint
 import android.content.ComponentName
 import android.content.Context
 import android.content.Intent
@@ -66,6 +67,7 @@ import com.woozie.balancingrobot.gamepad.AndroidGamepadMapper
 import com.woozie.balancingrobot.gamepad.GamepadDeviceInfo
 import com.woozie.balancingrobot.gamepad.GamepadInputState
 import com.woozie.balancingrobot.domain.model.Axis
+import com.woozie.balancingrobot.domain.model.AttitudeFilterMode
 import com.woozie.balancingrobot.domain.model.MotorControlMode
 import com.woozie.balancingrobot.domain.model.RobotConfig
 import com.woozie.balancingrobot.domain.sensor.ImuRatePolicy
@@ -267,6 +269,7 @@ class MainActivity : ComponentActivity() {
         return super.dispatchGenericMotionEvent(event)
     }
 
+    @SuppressLint("RestrictedApi")
     override fun dispatchKeyEvent(event: KeyEvent): Boolean {
         if (AndroidGamepadMapper.isGamepadEvent(event)) {
             if (AndroidGamepadMapper.isEmergencyDisarm(event)) {
@@ -703,6 +706,13 @@ private fun ImuDiagnosticCard(
         style = MaterialTheme.typography.bodySmall,
     )
     Text(
+        "Filtre : ${when (state.activeAttitudeFilterMode) {
+            AttitudeFilterMode.LEGACY_COMPLEMENTARY -> "historique"
+            AttitudeFilterMode.QUATERNION_COMPLEMENTARY -> "quaternion"
+        }} · état estimateur : ${state.attitudeEstimatorState} · resets : ${state.attitudeEstimatorResetCount}",
+        style = MaterialTheme.typography.bodySmall,
+    )
+    Text(
         "Demande : ${state.requestedRateHz} Hz · dt : ${number(state.dtMs)} ms · cadence accel : ${number(state.accelRateHz)} Hz · " +
             "gyro : ${number(state.gyroRateHz)} Hz",
         style = MaterialTheme.typography.bodySmall,
@@ -1058,6 +1068,29 @@ private fun BalanceTuningCard(
     Text(
         "Les gains, les consignes et les fréquences sont appliqués en direct, même pendant " +
             "l'équilibrage. La géométrie, l'IMU et les sécurités restent verrouillées une fois armé.",
+        style = MaterialTheme.typography.bodySmall,
+    )
+    Spacer(Modifier.height(8.dp))
+    Text("Filtre d'attitude actif", style = MaterialTheme.typography.bodyMedium)
+    OutlinedButton(
+        onClick = {
+            val next = when (draft.attitudeFilterMode) {
+                AttitudeFilterMode.LEGACY_COMPLEMENTARY -> AttitudeFilterMode.QUATERNION_COMPLEMENTARY
+                AttitudeFilterMode.QUATERNION_COMPLEMENTARY -> AttitudeFilterMode.LEGACY_COMPLEMENTARY
+            }
+            change(draft.copy(attitudeFilterMode = next))
+        },
+        enabled = guardedEditable,
+    ) {
+        Text(
+            when (draft.attitudeFilterMode) {
+                AttitudeFilterMode.LEGACY_COMPLEMENTARY -> "Complémentaire historique (scalaire)"
+                AttitudeFilterMode.QUATERNION_COMPLEMENTARY -> "Complémentaire quaternion"
+            },
+        )
+    }
+    Text(
+        "Le changement est disponible uniquement désarmé. Alpha s'applique au filtre sélectionné.",
         style = MaterialTheme.typography.bodySmall,
     )
     Spacer(Modifier.height(8.dp))

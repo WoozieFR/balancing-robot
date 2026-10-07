@@ -13,6 +13,12 @@ enum class Preset { SENSORS, FILTER, MANUAL_MOTORS, PD_SIMULATION, BALANCE }
 
 enum class Axis { X, Y, Z }
 
+/** Selectable attitude estimator. The historical mode is the compatibility default. */
+enum class AttitudeFilterMode {
+    LEGACY_COMPLEMENTARY,
+    QUATERNION_COMPLEMENTARY,
+}
+
 /** STS3215 motor command mode. The mode is written to Operating Mode (33). */
 enum class MotorControlMode(val protocolValue: Int, val label: String) {
     VELOCITY(1, "vitesse"),
@@ -49,6 +55,8 @@ data class Estimate(
     val angleDeg: Double,
     val gyroRateDegPerSec: Double,
     val dtSec: Double,
+    val yawRateDegPerSec: Double = 0.0,
+    val filterMode: AttitudeFilterMode = AttitudeFilterMode.LEGACY_COMPLEMENTARY,
 )
 
 data class ControlOutput(
@@ -79,6 +87,7 @@ data class RobotConfig(
     val imuSign: Int = 1,
     val zeroOffsetDeg: Double = 0.0,
     val alpha: Double = 0.98,
+    val attitudeFilterMode: AttitudeFilterMode = AttitudeFilterMode.LEGACY_COMPLEMENTARY,
     val targetDeg: Double = 0.0,
     val kp: Double = 0.0,
     val kd: Double = 0.0,

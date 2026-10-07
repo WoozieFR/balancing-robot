@@ -10,6 +10,7 @@ import androidx.datastore.preferences.preferencesDataStore
 import com.woozie.balancingrobot.domain.sensor.ImuRatePolicy
 import com.woozie.balancingrobot.domain.gamepad.GamepadConfig
 import com.woozie.balancingrobot.domain.model.Axis
+import com.woozie.balancingrobot.domain.model.AttitudeFilterMode
 import com.woozie.balancingrobot.domain.model.MotorControlMode
 import com.woozie.balancingrobot.domain.model.RobotConfig
 import com.woozie.balancingrobot.domain.model.RobotConfigValidator
@@ -31,6 +32,7 @@ object RobotSettings {
     private val imuSignKey = intPreferencesKey("imu_sign")
     private val zeroOffsetKey = doublePreferencesKey("zero_offset_deg")
     private val alphaKey = doublePreferencesKey("alpha")
+    private val attitudeFilterModeKey = stringPreferencesKey("attitude_filter_mode")
     private val targetKey = doublePreferencesKey("target_deg")
     private val kpKey = doublePreferencesKey("kp")
     private val kdKey = doublePreferencesKey("kd")
@@ -166,6 +168,11 @@ object RobotSettings {
             imuSign = preferences[imuSignKey] ?: defaults.imuSign,
             zeroOffsetDeg = preferences[zeroOffsetKey] ?: defaults.zeroOffsetDeg,
             alpha = preferences[alphaKey] ?: defaults.alpha,
+            attitudeFilterMode = runCatching {
+                AttitudeFilterMode.valueOf(
+                    preferences[attitudeFilterModeKey] ?: defaults.attitudeFilterMode.name,
+                )
+            }.getOrDefault(defaults.attitudeFilterMode),
             targetDeg = preferences[targetKey] ?: defaults.targetDeg,
             kp = preferences[kpKey] ?: defaults.kp,
             kd = preferences[kdKey] ?: defaults.kd,
@@ -226,6 +233,7 @@ object RobotSettings {
             preferences[imuSignKey] = config.imuSign
             preferences[zeroOffsetKey] = config.zeroOffsetDeg
             preferences[alphaKey] = config.alpha
+            preferences[attitudeFilterModeKey] = config.attitudeFilterMode.name
             preferences[targetKey] = config.targetDeg
             preferences[kpKey] = config.kp
             preferences[kdKey] = config.kd

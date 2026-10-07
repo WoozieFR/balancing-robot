@@ -34,6 +34,7 @@ import com.woozie.balancingrobot.domain.gamepad.GamepadDriveCommand
 import com.woozie.balancingrobot.domain.gamepad.GamepadNeutralReason
 import com.woozie.balancingrobot.domain.gamepad.ParameterDriveSetpoint
 import com.woozie.balancingrobot.domain.model.Axis
+import com.woozie.balancingrobot.domain.model.AttitudeFilterMode
 import com.woozie.balancingrobot.domain.model.MotorControlMode
 import com.woozie.balancingrobot.domain.model.RobotConfig
 import com.woozie.balancingrobot.domain.model.RobotConfigValidator
@@ -336,6 +337,7 @@ class RobotControlService : Service() {
         val protectedChanged = activeConfig.axis != config.axis ||
             activeConfig.imuSign != config.imuSign ||
             activeConfig.zeroOffsetDeg != config.zeroOffsetDeg ||
+            activeConfig.attitudeFilterMode != config.attitudeFilterMode ||
             activeConfig.vmax != config.vmax ||
             activeConfig.motorIds != config.motorIds ||
             activeConfig.motorSigns != config.motorSigns ||
@@ -377,6 +379,7 @@ class RobotControlService : Service() {
             motorScheduler?.close()
             motorScheduler = null
         }
+        val attitudeFilterChanged = activeConfig.attitudeFilterMode != config.attitudeFilterMode
         activeConfig = config
         driveSetpointArbiter.acknowledgeParameterTakeover()
         if (imuRuntime == null) imuRuntime = SimulatedControlRuntime(config)
@@ -385,6 +388,11 @@ class RobotControlService : Service() {
         _state.update { state ->
             state.copy(
                 config = config,
+                imu = state.imu.copy(
+                    attitudeFilterMode = config.attitudeFilterMode,
+                    activeAttitudeFilterMode = config.attitudeFilterMode,
+                    attitudeEstimatorState = if (attitudeFilterChanged) "INITIALIZING" else state.imu.attitudeEstimatorState,
+                ),
                 errorMessage = null,
                 speedLoop = state.speedLoop.copy(
                     enabled = config.speedLoopEnabled,
@@ -801,6 +809,9 @@ class RobotControlService : Service() {
             ),
             imu = ImuDiagnosticState(
                 requestedRateHz = imuRateHz,
+                attitudeFilterMode = config.attitudeFilterMode,
+                activeAttitudeFilterMode = config.attitudeFilterMode,
+                attitudeEstimatorState = "INITIALIZING",
                 status = "Initialisation des capteurs…",
             ),
             gamepad = GamepadDiagnosticState(),
@@ -1043,6 +1054,8 @@ class RobotControlService : Service() {
                     dtMs = dtSec * 1_000.0,
                     accelAngleDeg = null,
                     estimatedAngleDeg = null,
+                    attitudeEstimatorState = "INITIALIZING",
+                    attitudeEstimatorResetCount = imuRuntime?.estimatorResetCount ?: it.attitudeEstimatorResetCount,
                     status = "IMU stale : accélération absente ou trop ancienne",
                 )
             }
@@ -1068,34 +1081,63 @@ class RobotControlService : Service() {
                 precisionHeld = driveSetpoint.precisionHeld,
             ))
         }
+        val estimate = imuRuntime?.estimate(
+            accel = accel!!,
+            gyroBodyRadPerSec = values,
+            dtSec = dtSec,
+        )
+        if (estimate == null) {
+            appendControlRecord(
+                timestampNs = timestampNs,
+                receivedTimestampNs = receivedTimestampNs,
+                accel = accel,
+                gyroValues = values,
+                gyroXDps = gyroXDps,
+                gyroYDps = gyroYDps,
+                gyroZDps = gyroZDps,
+                gyroRateDps = gyroDps,
+                dtSec = dtSec,
+                sampleStatus = "ESTIMATE_INVALID",
+            )
+            updateImu {
+                it.copy(
+                    accelAngleDeg = null,
+                    estimatedAngleDeg = null,
+                    attitudeFilterMode = activeConfig.attitudeFilterMode,
+                    activeAttitudeFilterMode = activeConfig.attitudeFilterMode,
+                    attitudeEstimatorState = "INVALID",
+                    attitudeEstimatorResetCount = imuRuntime?.estimatorResetCount ?: it.attitudeEstimatorResetCount,
+                    dtMs = dtSec * 1_000.0,
+                    status = "Estimation invalide",
+                )
+            }
+            if (_state.value.motors.armState == MotorArmState.BALANCE_ARMED) {
+                triggerBalanceFault("Estimation d'attitude invalide")
+            }
+            return
+        }
         val speedOutput = updateSpeedLoop(
             receivedTimestampNs,
             driveSetpoint.speedTargetCmPerSec,
-            gyroDps,
+            estimate.gyroRateDegPerSec,
             driveSetpoint.yawTargetDegPerSec,
-            gyroZDps ?: 0.0,
-            pitchAngleDeg = _state.value.imu.estimatedAngleDeg,
+            estimate.yawRateDegPerSec,
+            pitchAngleDeg = estimate.angleDeg,
         )
-        val step = imuRuntime?.step(
-            accel!!,
-            gyroDps,
-            dtSec,
+        val step = imuRuntime?.control(
+            estimate,
             targetDeg = speedOutput.effectiveTargetDeg,
-            yawRateDegPerSec = gyroZDps ?: 0.0,
             yawTargetDegPerSec = driveSetpoint.yawTargetDegPerSec,
         )
-        val estimate = step?.estimate
-        val accelAngle = estimate?.accelAngleDeg
-        val estimatedAngle = estimate?.angleDeg
-        val shouldPublishTrace = estimate != null &&
+        val accelAngle = estimate.accelAngleDeg
+        val estimatedAngle = estimate.angleDeg
+        val shouldPublishTrace =
             (lastTracePublishNs == 0L || timestampNs - lastTracePublishNs >= 50_000_000L)
-        if (estimate != null) {
-            trace.addLast(
-                ImuTracePoint(timestampNs, estimate.accelAngleDeg, estimate.angleDeg, estimate.gyroRateDegPerSec),
-            )
-            while (trace.size > 160) trace.removeFirst()
-            if (shouldPublishTrace) lastTracePublishNs = timestampNs
-        }
+        trace.addLast(
+            ImuTracePoint(timestampNs, estimate.accelAngleDeg, estimate.angleDeg, estimate.gyroRateDegPerSec),
+        )
+        while (trace.size > 160) trace.removeFirst()
+        if (shouldPublishTrace) lastTracePublishNs = timestampNs
         imuLog.append(
             ImuLogRecord(
                 timestampNs = timestampNs,
@@ -1109,6 +1151,10 @@ class RobotControlService : Service() {
             it.copy(
                 accelAngleDeg = accelAngle,
                 estimatedAngleDeg = estimatedAngle,
+                attitudeFilterMode = activeConfig.attitudeFilterMode,
+                activeAttitudeFilterMode = estimate.filterMode,
+                attitudeEstimatorState = if (imuRuntime?.estimatorInitialized == true) "ACTIVE" else "INITIALIZING",
+                attitudeEstimatorResetCount = imuRuntime?.estimatorResetCount ?: it.attitudeEstimatorResetCount,
                 dtMs = dtSec * 1_000.0,
                 journalSamples = imuLog.size(),
                 trace = if (shouldPublishTrace) trace.toList() else it.trace,
@@ -1277,6 +1323,9 @@ class RobotControlService : Service() {
                 gyroRateDegPerSec = gyroRateDps,
                 dtSec = dtSec,
                 config = config,
+                attitudeFilterMode = _state.value.imu.activeAttitudeFilterMode.name,
+                attitudeEstimatorState = _state.value.imu.attitudeEstimatorState,
+                attitudeEstimatorResetCount = _state.value.imu.attitudeEstimatorResetCount,
                 errorDeg = control?.errorDeg,
                 rawCommand = control?.rawCommand,
                 boundedCommand = control?.boundedCommand,
@@ -1359,6 +1408,10 @@ class RobotControlService : Service() {
             put("rejectedSamples", imu.rejectedSamples)
             put("journalSamples", imu.journalSamples)
             put("status", imu.status)
+            put("attitudeFilterConfigured", imu.attitudeFilterMode.name)
+            put("attitudeFilterActive", imu.activeAttitudeFilterMode.name)
+            put("attitudeEstimatorState", imu.attitudeEstimatorState)
+            put("attitudeEstimatorResetCount", imu.attitudeEstimatorResetCount)
             imu.accelAngleDeg?.let { put("accelAngleDeg", it) }
             imu.estimatedAngleDeg?.let { put("estimatedAngleDeg", it) }
             imu.dtMs?.let { put("dtMs", it) }
@@ -1395,6 +1448,7 @@ class RobotControlService : Service() {
             gamepad.lastEvent?.let { put("gamepadLastEvent", it) }
             put("axis", config.axis.name)
             put("imuSign", config.imuSign)
+            put("attitudeFilterMode", config.attitudeFilterMode.name)
             put("alpha", config.alpha)
             put("zeroOffsetDeg", config.zeroOffsetDeg)
             put("targetDeg", config.targetDeg)
@@ -1542,8 +1596,15 @@ class RobotControlService : Service() {
             "update_parameters" -> {
                 val axis = WebProtocol.payloadString(command, "axis")
                     ?.let { value -> runCatching { Axis.valueOf(value) }.getOrNull() }
+                val attitudeFilterModeText = WebProtocol.payloadString(command, "attitudeFilterMode")
+                val attitudeFilterMode = attitudeFilterModeText
+                    ?.let { value -> runCatching { AttitudeFilterMode.valueOf(value) }.getOrNull() }
+                if (command.payload.containsKey("attitudeFilterMode") && attitudeFilterMode == null) {
+                    return WebProtocol.ack(command.id, false, error = "ATTITUDE_FILTER_MODE_INVALID")
+                }
                 val config = _state.value.config.copy(
                     axis = axis ?: _state.value.config.axis,
+                    attitudeFilterMode = attitudeFilterMode ?: _state.value.config.attitudeFilterMode,
                     imuSign = WebProtocol.payloadInt(command, "imuSign") ?: _state.value.config.imuSign,
                     alpha = WebProtocol.payloadDouble(command, "alpha") ?: _state.value.config.alpha,
                     targetDeg = WebProtocol.payloadDouble(command, "targetDeg") ?: _state.value.config.targetDeg,
