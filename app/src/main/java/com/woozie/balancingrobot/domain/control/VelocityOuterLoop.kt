@@ -194,6 +194,10 @@ class VelocityOuterLoop(initialConfig: RobotConfig) {
         } else if (releasedManeuver) {
             autoTrimState = AutoTrimState.BRAKE_TO_ZERO
             settledDurationSec = 0.0
+            // The movement integral is no longer allowed to become a hidden
+            // position memory during braking. Keep only the last validated
+            // rest checkpoint while the proportional speed term brakes.
+            integralCorrectionDeg = restTrimDeg
         }
         wasManeuverActive = maneuverActive
         val appliedSpeedTarget = approachSpeedTarget(
@@ -306,7 +310,7 @@ class VelocityOuterLoop(initialConfig: RobotConfig) {
         val quiet = physicalStopCandidate &&
             abs(yawTargetDegPerSec) <= COMMAND_EPSILON &&
             abs(appliedSpeedTarget) <= COMMAND_EPSILON
-        var checkpointRestoredThisStep = false
+        var enteredRestThisStep = false
         if (newFeedback && feedbackDtSec > 0.0 && !maneuverActive) {
             when (autoTrimState) {
                 AutoTrimState.MANEUVER -> {
@@ -329,9 +333,8 @@ class VelocityOuterLoop(initialConfig: RobotConfig) {
                     } else {
                         settledDurationSec += feedbackDtSec
                         if (settledDurationSec >= config.speedQuietDurationMs / 1_000.0) {
-                            integralCorrectionDeg = restTrimDeg
                             autoTrimState = AutoTrimState.REST
-                            checkpointRestoredThisStep = true
+                            enteredRestThisStep = true
                         }
                     }
                 }
@@ -374,25 +377,26 @@ class VelocityOuterLoop(initialConfig: RobotConfig) {
         val integralCandidate = (integralCorrectionDeg +
             config.speedIntegralGainDegPerCmPerSecSec * error * feedbackDtSec)
             .coerceIn(-config.speedTargetAngleLimitDeg, config.speedTargetAngleLimitDeg)
-        val rawCorrection = proportionalCorrection + integralCandidate
-        val correction = rawCorrection.coerceIn(
+        val candidateCorrection = proportionalCorrection + integralCandidate
+        val candidateCorrectionClamped = candidateCorrection.coerceIn(
             -config.speedTargetAngleLimitDeg,
             config.speedTargetAngleLimitDeg,
         )
-        val correctionSaturated = rawCorrection != correction
-        val rawTargetCandidate = config.targetDeg + rawCorrection
+        val candidateCorrectionSaturated = candidateCorrection != candidateCorrectionClamped
+        val rawTargetCandidate = config.targetDeg + candidateCorrection
         val absoluteTargetCandidate = rawTargetCandidate.coerceIn(
             -config.speedAbsoluteAngleLimitDeg,
             config.speedAbsoluteAngleLimitDeg,
         )
         val absoluteTargetSaturated = absoluteTargetCandidate != rawTargetCandidate
         val integrationWouldWorsenSaturation =
-            (correctionSaturated && ((rawCorrection > correction && error > 0.0) ||
-                (rawCorrection < correction && error < 0.0))) ||
-                (absoluteTargetSaturated && ((rawTargetCandidate > absoluteTargetCandidate && error > 0.0) ||
-                    (rawTargetCandidate < absoluteTargetCandidate && error < 0.0)))
-        val allowIntegralUpdate = autoTrimState != AutoTrimState.SETTLING &&
-            !checkpointRestoredThisStep &&
+            (candidateCorrectionSaturated && ((candidateCorrection > candidateCorrectionClamped && error > 0.0) ||
+                (candidateCorrection < candidateCorrectionClamped && error < 0.0))) ||
+            (absoluteTargetSaturated && ((rawTargetCandidate > absoluteTargetCandidate && error > 0.0) ||
+                (rawTargetCandidate < absoluteTargetCandidate && error < 0.0)))
+        val allowIntegralUpdate = (autoTrimState == AutoTrimState.MANEUVER ||
+            autoTrimState == AutoTrimState.REST) &&
+            !enteredRestThisStep &&
             newFeedback && !feedbackWasStale && feedbackDtSec > 0.0
         if (allowIntegralUpdate && !integrationWouldWorsenSaturation) {
             integralCorrectionDeg = integralCandidate
@@ -400,25 +404,26 @@ class VelocityOuterLoop(initialConfig: RobotConfig) {
         if (autoTrimState == AutoTrimState.REST) {
             restTrimDeg = integralCorrectionDeg
         }
+        // Use the stored integral for the actual target. In BRAKE_TO_ZERO and
+        // SETTLING it is intentionally frozen at the checkpoint; the
+        // candidate above is only used to evaluate anti-windup.
+        val rawCorrection = proportionalCorrection + integralCorrectionDeg
+        val correction = rawCorrection.coerceIn(
+            -config.speedTargetAngleLimitDeg,
+            config.speedTargetAngleLimitDeg,
+        )
+        val correctionSaturated = rawCorrection != correction
         val rawTarget = config.targetDeg + correction
         val absoluteTarget = rawTarget.coerceIn(
             -config.speedAbsoluteAngleLimitDeg,
             config.speedAbsoluteAngleLimitDeg,
         )
-        val effective = if (checkpointRestoredThisStep) {
-            // Drop the old braking target together with the checkpoint
-            // restoration. Otherwise the pitch target slew would keep
-            // applying the obsolete braking command for several cycles.
-            currentTargetDeg = absoluteTarget
-            absoluteTarget
-        } else {
-            approachTarget(
-                absoluteTarget,
-                dtSec,
-                applySlew = true,
-                initializeAtDesired = currentTargetDeg == null,
-            )
-        }
+        val effective = approachTarget(
+            absoluteTarget,
+            dtSec,
+            applySlew = true,
+            initializeAtDesired = currentTargetDeg == null,
+        )
         return VelocityLoopOutput(
             enabled = config.speedLoopEnabled,
             updated = true,

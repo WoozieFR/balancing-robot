@@ -136,7 +136,7 @@ class VelocityOuterLoopTest {
         val halfway = loop.step(1_060_000_000L, feedback(4, 0, 0, 1_055_000_000L), 0.0)
         assertEquals(0.0, halfway.appliedTargetCmPerSec, 1e-9)
         assertEquals("SETTLING", halfway.autoTrimState)
-        assertEquals(movingAgain.integralCorrectionDeg, halfway.integralCorrectionDeg, 1e-9)
+        assertEquals(halfway.restCheckpointDeg, halfway.integralCorrectionDeg, 1e-9)
 
         val complete = loop.step(1_080_000_000L, feedback(5, 0, 0, 1_075_000_000L), 0.0)
         assertEquals(0.0, complete.appliedTargetCmPerSec, 1e-9)
@@ -177,7 +177,7 @@ class VelocityOuterLoopTest {
             yawRateDegPerSec = 0.0,
         )
         assertEquals("BRAKE_TO_ZERO", releasedYaw.autoTrimState)
-        assertTrue(releasedYaw.integralCorrectionDeg < 0.0)
+        assertEquals(releasedYaw.restCheckpointDeg, releasedYaw.integralCorrectionDeg, 1e-9)
 
         var nowNs = 1_040_000_000L
         var sequence = 3L
@@ -213,15 +213,15 @@ class VelocityOuterLoopTest {
         val released = loop.step(1_060_000_000L, feedback(4, 1_000, 1_000, 1_055_000_000L), 0.0)
         val rolling = loop.step(1_080_000_000L, feedback(5, 1_000, 1_000, 1_075_000_000L), 0.0)
         assertEquals("BRAKE_TO_ZERO", released.autoTrimState)
-        assertTrue(released.integralCorrectionDeg != rest.integralCorrectionDeg)
+        assertEquals(rest.integralCorrectionDeg, released.integralCorrectionDeg, 1e-9)
         assertEquals("BRAKE_TO_ZERO", rolling.autoTrimState)
 
         val crossing = loop.step(1_100_000_000L, feedback(6, 0, 0, 1_095_000_000L), 0.0)
         val afterCrossing = loop.step(1_120_000_000L, feedback(7, 1_000, 1_000, 1_115_000_000L), 0.0)
         assertEquals("SETTLING", crossing.autoTrimState)
-        assertTrue(crossing.integralCorrectionDeg != rest.integralCorrectionDeg)
+        assertEquals(rest.integralCorrectionDeg, crossing.integralCorrectionDeg, 1e-9)
         assertEquals("BRAKE_TO_ZERO", afterCrossing.autoTrimState)
-        assertTrue(afterCrossing.integralCorrectionDeg != crossing.integralCorrectionDeg)
+        assertEquals(crossing.integralCorrectionDeg, afterCrossing.integralCorrectionDeg, 1e-9)
 
         var nowNs = 1_120_000_000L
         var sequence = 7L
@@ -236,7 +236,7 @@ class VelocityOuterLoopTest {
                 pitchRateDegPerSec = 5.0,
             )
         }
-        assertTrue(pitchMoving.integralCorrectionDeg != afterCrossing.integralCorrectionDeg)
+        assertEquals(afterCrossing.integralCorrectionDeg, pitchMoving.integralCorrectionDeg, 1e-9)
 
         var relearned = pitchMoving
         repeat(40) {
@@ -250,6 +250,7 @@ class VelocityOuterLoopTest {
             )
         }
         assertEquals("REST", relearned.autoTrimState)
+        assertTrue(relearned.integralCorrectionDeg < rest.restCheckpointDeg)
     }
 
     @Test
@@ -474,7 +475,7 @@ class VelocityOuterLoopTest {
     }
 
     @Test
-    fun settlingExitReactivatesIntegralInsteadOfFreezingAtCheckpoint() {
+    fun settlingExitKeepsCheckpointDuringBrake() {
         val loop = VelocityOuterLoop(config(
             speedTargetCmPerSec = 5.0,
             speedFilterAlpha = 1.0,
@@ -489,7 +490,7 @@ class VelocityOuterLoopTest {
 
         val departed = loop.step(1_080_000_000L, feedback(5, 1_000, 1_000, 1_075_000_000L), 0.0)
         assertEquals("BRAKE_TO_ZERO", departed.autoTrimState)
-        assertTrue(departed.integralCorrectionDeg != settled.integralCorrectionDeg)
+        assertEquals(settled.integralCorrectionDeg, departed.integralCorrectionDeg, 1e-9)
         assertTrue(moving.integralCorrectionDeg != 0.0)
     }
 
@@ -539,7 +540,7 @@ class VelocityOuterLoopTest {
             pitchAngleDeg = 8.0,
         )
         assertEquals("SETTLING", firstCandidate.autoTrimState)
-        assertEquals(moving.integralCorrectionDeg, firstCandidate.integralCorrectionDeg, 1e-9)
+        assertEquals(firstCandidate.restCheckpointDeg, firstCandidate.integralCorrectionDeg, 1e-9)
 
         var output = firstCandidate
         var nowNs = 1_080_000_000L
@@ -554,7 +555,7 @@ class VelocityOuterLoopTest {
                 pitchAngleDeg = 8.0,
             )
             assertEquals("SETTLING", output.autoTrimState)
-            assertEquals(moving.integralCorrectionDeg, output.integralCorrectionDeg, 1e-9)
+            assertEquals(output.restCheckpointDeg, output.integralCorrectionDeg, 1e-9)
         }
         nowNs += 20_000_000L
         sequence += 1L
