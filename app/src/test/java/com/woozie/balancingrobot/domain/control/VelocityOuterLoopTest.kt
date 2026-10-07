@@ -548,6 +548,49 @@ class VelocityOuterLoopTest {
     }
 
     @Test
+    fun maneuverStartedDuringSettlingRestoresItsOwnBaseline() {
+        val loop = VelocityOuterLoop(config(
+            speedTargetCmPerSec = 0.0,
+            speedTargetSlewRateCmPerSec = 100.0,
+            speedFilterAlpha = 1.0,
+            speedIntegralGainDegPerCmPerSecSec = 1.0,
+            speedQuietDurationMs = 500,
+        ))
+
+        loop.step(1_000_000_000L, feedback(1, 0, 0, 995_000_000L), 0.0)
+        loop.step(1_020_000_000L, feedback(2, 0, 0, 1_015_000_000L), 5.0)
+        loop.step(1_040_000_000L, feedback(3, 1_000, 1_000, 1_035_000_000L), 0.0)
+        loop.step(1_060_000_000L, feedback(4, 0, 0, 1_055_000_000L), 0.0)
+
+        // SETTLING is active, but the non-zero fresh wheel feedback lets its
+        // working integral adapt while the persistent checkpoint stays zero.
+        val settlingRecovery = loop.step(
+            1_080_000_000L,
+            feedback(5, 100, 100, 1_075_000_000L),
+            0.0,
+        )
+        assertEquals("SETTLING", settlingRecovery.autoTrimState)
+        assertNotEquals(settlingRecovery.restCheckpointDeg, settlingRecovery.integralCorrectionDeg, 1e-9)
+        val baselineBeforeNewManeuver = settlingRecovery.integralCorrectionDeg
+
+        val newManeuver = loop.step(
+            1_100_000_000L,
+            feedback(6, 100, 100, 1_095_000_000L),
+            5.0,
+        )
+        assertEquals("MANEUVER", newManeuver.autoTrimState)
+
+        val released = loop.step(
+            1_120_000_000L,
+            feedback(7, 1_000, 1_000, 1_115_000_000L),
+            0.0,
+        )
+        assertEquals("BRAKE_TO_ZERO", released.autoTrimState)
+        assertEquals(baselineBeforeNewManeuver, released.integralCorrectionDeg, 1e-9)
+        assertNotEquals(released.restCheckpointDeg, released.integralCorrectionDeg, 1e-9)
+    }
+
+    @Test
     fun physicalStopNeedsEquilibriumAngleAndContinuousQualification() {
         val loop = VelocityOuterLoop(config(
             targetDeg = 8.0,

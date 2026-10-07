@@ -75,6 +75,10 @@ class VelocityOuterLoop(initialConfig: RobotConfig) {
     private var wasStale = true
     private var integralCorrectionDeg = 0.0
     private var restTrimDeg = 0.0
+    // Temporary baseline for the currently active maneuver. It is distinct
+    // from the last validated REST checkpoint because a maneuver can start
+    // while SETTLING is still recovering the robot.
+    private var maneuverBaselineDeg = 0.0
     private var wasManeuverActive = false
     private var autoTrimState = AutoTrimState.REST
     private var settledDurationSec = 0.0
@@ -96,6 +100,7 @@ class VelocityOuterLoop(initialConfig: RobotConfig) {
         if (!valid.speedLoopEnabled || modeChanged) {
             integralCorrectionDeg = 0.0
             restTrimDeg = 0.0
+            maneuverBaselineDeg = 0.0
             wasManeuverActive = false
             autoTrimState = AutoTrimState.REST
             settledDurationSec = 0.0
@@ -111,6 +116,10 @@ class VelocityOuterLoop(initialConfig: RobotConfig) {
                 -valid.speedTargetAngleLimitDeg,
                 valid.speedTargetAngleLimitDeg,
             )
+            maneuverBaselineDeg = maneuverBaselineDeg.coerceIn(
+                -valid.speedTargetAngleLimitDeg,
+                valid.speedTargetAngleLimitDeg,
+            )
         }
         if (resetFilter) {
             filteredCmPerSec = null
@@ -118,6 +127,7 @@ class VelocityOuterLoop(initialConfig: RobotConfig) {
             wasStale = true
             integralCorrectionDeg = 0.0
             restTrimDeg = 0.0
+            maneuverBaselineDeg = 0.0
             wasManeuverActive = false
             autoTrimState = AutoTrimState.REST
             settledDurationSec = 0.0
@@ -136,6 +146,7 @@ class VelocityOuterLoop(initialConfig: RobotConfig) {
         wasStale = true
         integralCorrectionDeg = 0.0
         restTrimDeg = 0.0
+        maneuverBaselineDeg = 0.0
         wasManeuverActive = false
         autoTrimState = AutoTrimState.REST
         settledDurationSec = 0.0
@@ -180,9 +191,10 @@ class VelocityOuterLoop(initialConfig: RobotConfig) {
         val startedManeuver = !wasManeuverActive && maneuverActive
         val releasedManeuver = wasManeuverActive && !maneuverActive
         if (startedManeuver) {
-            // A checkpoint is captured only from a validated REST state. If
-            // the user starts a new maneuver while braking or settling, keep
-            // the previous rest checkpoint: it has not been validated yet.
+            // Always capture the working integral for this specific maneuver.
+            // The persistent REST checkpoint is updated only after a full
+            // settling qualification.
+            maneuverBaselineDeg = integralCorrectionDeg
             if (autoTrimState == AutoTrimState.REST) {
                 restTrimDeg = integralCorrectionDeg
             }
@@ -195,9 +207,10 @@ class VelocityOuterLoop(initialConfig: RobotConfig) {
             autoTrimState = AutoTrimState.BRAKE_TO_ZERO
             settledDurationSec = 0.0
             // The movement integral is no longer allowed to become a hidden
-            // position memory during braking. Keep only the last validated
-            // rest checkpoint while the proportional speed term brakes.
-            integralCorrectionDeg = restTrimDeg
+            // position memory during braking. Restore the baseline captured
+            // for this maneuver, preserving any SETTLING recovery that
+            // happened before it started.
+            integralCorrectionDeg = maneuverBaselineDeg
         }
         wasManeuverActive = maneuverActive
         val appliedSpeedTarget = approachSpeedTarget(
