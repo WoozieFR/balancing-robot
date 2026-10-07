@@ -310,8 +310,11 @@ class VelocityOuterLoop(initialConfig: RobotConfig) {
         val quiet = physicalStopCandidate &&
             abs(yawTargetDegPerSec) <= COMMAND_EPSILON &&
             abs(appliedSpeedTarget) <= COMMAND_EPSILON
-        var enteredRestThisStep = false
-        if (newFeedback && feedbackDtSec > 0.0 && !maneuverActive) {
+        // State transitions use the latest fresh wheel estimate on every IMU
+        // tick. The feedback sequence only gates integration; it must not
+        // make a 200 Hz control loop wait for the next telemetry packet to
+        // notice that the robot has reached (or left) the capture zone.
+        if (fresh && !maneuverActive) {
             when (autoTrimState) {
                 AutoTrimState.MANEUVER -> {
                     autoTrimState = AutoTrimState.BRAKE_TO_ZERO
@@ -328,13 +331,16 @@ class VelocityOuterLoop(initialConfig: RobotConfig) {
                 }
                 AutoTrimState.SETTLING -> {
                     if (!physicalStopCandidate) {
-                        autoTrimState = AutoTrimState.BRAKE_TO_ZERO
+                        // SETTLING is the recovery phase in which the PI is
+                        // deliberately active again. Losing the candidate
+                        // for one sample invalidates only the qualification
+                        // timer; keep the recovery authority instead of
+                        // freezing the integral and going back to braking.
                         settledDurationSec = 0.0
                     } else {
-                        settledDurationSec += feedbackDtSec
+                        settledDurationSec += dtSec
                         if (settledDurationSec >= config.speedQuietDurationMs / 1_000.0) {
                             autoTrimState = AutoTrimState.REST
-                            enteredRestThisStep = true
                         }
                     }
                 }
@@ -395,18 +401,21 @@ class VelocityOuterLoop(initialConfig: RobotConfig) {
             (absoluteTargetSaturated && ((rawTargetCandidate > absoluteTargetCandidate && error > 0.0) ||
                 (rawTargetCandidate < absoluteTargetCandidate && error < 0.0)))
         val allowIntegralUpdate = (autoTrimState == AutoTrimState.MANEUVER ||
+            autoTrimState == AutoTrimState.SETTLING ||
             autoTrimState == AutoTrimState.REST) &&
-            !enteredRestThisStep &&
             newFeedback && !feedbackWasStale && feedbackDtSec > 0.0
         if (allowIntegralUpdate && !integrationWouldWorsenSaturation) {
             integralCorrectionDeg = integralCandidate
         }
         if (autoTrimState == AutoTrimState.REST) {
+            // This is the only point at which the working integral is
+            // committed as the new persistent rest checkpoint. During
+            // SETTLING it remains protected while the PI recovers the robot.
             restTrimDeg = integralCorrectionDeg
         }
-        // Use the stored integral for the actual target. In BRAKE_TO_ZERO and
-        // SETTLING it is intentionally frozen at the checkpoint; the
-        // candidate above is only used to evaluate anti-windup.
+        // Use the stored integral for the actual target. It is frozen at the
+        // checkpoint during BRAKE_TO_ZERO, but becomes active again in
+        // SETTLING so the PI can complete recovery before REST is validated.
         val rawCorrection = proportionalCorrection + integralCorrectionDeg
         val correction = rawCorrection.coerceIn(
             -config.speedTargetAngleLimitDeg,

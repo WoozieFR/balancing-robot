@@ -220,8 +220,10 @@ class VelocityOuterLoopTest {
         val afterCrossing = loop.step(1_120_000_000L, feedback(7, 1_000, 1_000, 1_115_000_000L), 0.0)
         assertEquals("SETTLING", crossing.autoTrimState)
         assertEquals(rest.integralCorrectionDeg, crossing.integralCorrectionDeg, 1e-9)
-        assertEquals("BRAKE_TO_ZERO", afterCrossing.autoTrimState)
-        assertEquals(crossing.integralCorrectionDeg, afterCrossing.integralCorrectionDeg, 1e-9)
+        // SETTLING remains the recovery phase when the candidate is lost;
+        // only its qualification timer is reset while the PI stays active.
+        assertEquals("SETTLING", afterCrossing.autoTrimState)
+        assertNotEquals(crossing.integralCorrectionDeg, afterCrossing.integralCorrectionDeg, 1e-9)
 
         var nowNs = 1_120_000_000L
         var sequence = 7L
@@ -236,7 +238,7 @@ class VelocityOuterLoopTest {
                 pitchRateDegPerSec = 5.0,
             )
         }
-        assertEquals(afterCrossing.integralCorrectionDeg, pitchMoving.integralCorrectionDeg, 1e-9)
+        assertNotEquals(afterCrossing.integralCorrectionDeg, pitchMoving.integralCorrectionDeg, 1e-9)
 
         var relearned = pitchMoving
         repeat(40) {
@@ -365,7 +367,9 @@ class VelocityOuterLoopTest {
             0.0,
         )
         assertEquals("SETTLING", recovered.autoTrimState)
-        assertEquals(0.0, recovered.settledDurationSec, 1e-9)
+        // The stale interval itself contributes nothing; the first fresh
+        // recovery tick may start the new qualification window.
+        assertEquals(0.02, recovered.settledDurationSec, 1e-9)
     }
 
     @Test
@@ -475,7 +479,7 @@ class VelocityOuterLoopTest {
     }
 
     @Test
-    fun settlingExitKeepsCheckpointDuringBrake() {
+    fun settlingExitKeepsCheckpointAndReenablesIntegral() {
         val loop = VelocityOuterLoop(config(
             speedTargetCmPerSec = 5.0,
             speedFilterAlpha = 1.0,
@@ -489,9 +493,58 @@ class VelocityOuterLoopTest {
         assertEquals("SETTLING", settled.autoTrimState)
 
         val departed = loop.step(1_080_000_000L, feedback(5, 1_000, 1_000, 1_075_000_000L), 0.0)
-        assertEquals("BRAKE_TO_ZERO", departed.autoTrimState)
-        assertEquals(settled.integralCorrectionDeg, departed.integralCorrectionDeg, 1e-9)
+        assertEquals("SETTLING", departed.autoTrimState)
+        assertNotEquals(settled.integralCorrectionDeg, departed.integralCorrectionDeg, 1e-9)
         assertTrue(moving.integralCorrectionDeg != 0.0)
+    }
+
+    @Test
+    fun settlingIsEvaluatedOnEveryFreshImuTickAndStaysSticky() {
+        val loop = VelocityOuterLoop(config(
+            speedTargetCmPerSec = 5.0,
+            speedFilterAlpha = 1.0,
+            speedQuietDurationMs = 100,
+            speedFeedbackTimeoutMs = 500,
+            speedIntegralGainDegPerCmPerSecSec = 1.0,
+        ))
+        loop.step(1_000_000_000L, feedback(1, 0, 0, 995_000_000L), 5.0)
+        loop.step(1_020_000_000L, feedback(2, 0, 0, 1_015_000_000L), 5.0)
+        loop.step(1_040_000_000L, feedback(3, 1_000, 1_000, 1_035_000_000L), 0.0)
+
+        val firstCandidate = loop.step(
+            1_060_000_000L,
+            feedback(4, 0, 0, 1_055_000_000L),
+            0.0,
+        )
+        assertEquals("SETTLING", firstCandidate.autoTrimState)
+
+        // The wheel packet is unchanged, but it is still fresh. A high pitch
+        // rate invalidates the candidate without sending the controller back
+        // to BRAKE_TO_ZERO.
+        val disturbed = loop.step(
+            1_080_000_000L,
+            feedback(4, 0, 0, 1_055_000_000L),
+            0.0,
+            pitchRateDegPerSec = 5.0,
+        )
+        assertEquals("SETTLING", disturbed.autoTrimState)
+        assertEquals(0.0, disturbed.settledDurationSec, 1e-9)
+
+        // With the same wheel packet, the next fresh IMU tick can restart
+        // the qualification timer; it is not tied to telemetry sequence rate.
+        var output = disturbed
+        var nowNs = 1_080_000_000L
+        repeat(5) {
+            nowNs += 20_000_000L
+            output = loop.step(
+                nowNs,
+                feedback(4, 0, 0, 1_055_000_000L),
+                0.0,
+                pitchRateDegPerSec = 0.0,
+            )
+        }
+        assertEquals("REST", output.autoTrimState)
+        assertEquals(0.0, output.restCheckpointDeg, 1e-9)
     }
 
     @Test
