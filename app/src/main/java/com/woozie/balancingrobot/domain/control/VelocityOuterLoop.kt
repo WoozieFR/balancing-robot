@@ -164,9 +164,13 @@ class VelocityOuterLoop(initialConfig: RobotConfig) {
         yawTargetDegPerSec: Double = config.yawTargetDegPerSec,
         yawRateDegPerSec: Double = 0.0,
         pitchAngleDeg: Double? = null,
+        targetLimitCmPerSec: Double = config.speedTargetLimitCmPerSec,
     ): VelocityLoopOutput {
         require(nowNs > 0L) { "monotonic timestamp must be positive" }
         require(targetCmPerSec.isFinite()) { "speed target must be finite" }
+        require(targetLimitCmPerSec.isFinite() && targetLimitCmPerSec in 1.0..MAX_EXTERNAL_TARGET_CM_PER_SEC) {
+            "speed target limit must be finite and in [1, $MAX_EXTERNAL_TARGET_CM_PER_SEC]"
+        }
         require(pitchRateDegPerSec.isFinite()) { "pitch gyro rate must be finite" }
         require(yawTargetDegPerSec.isFinite()) { "yaw target must be finite" }
         require(yawRateDegPerSec.isFinite()) { "yaw gyro rate must be finite" }
@@ -182,8 +186,8 @@ class VelocityOuterLoop(initialConfig: RobotConfig) {
             ((nowNs - previousTickNs).toDouble() / 1_000_000_000.0).coerceIn(0.0, 0.5)
         } else 0.0
         val requestedSpeedTarget = targetCmPerSec.coerceIn(
-            -config.speedTargetLimitCmPerSec,
-            config.speedTargetLimitCmPerSec,
+            -targetLimitCmPerSec,
+            targetLimitCmPerSec,
         )
         val speedCommandActive = abs(requestedSpeedTarget) > COMMAND_EPSILON
         val yawCommandActive = abs(yawTargetDegPerSec) > COMMAND_EPSILON
@@ -546,6 +550,7 @@ class VelocityOuterLoop(initialConfig: RobotConfig) {
 
     private companion object {
         const val COMMAND_EPSILON = 1e-6
+        const val MAX_EXTERNAL_TARGET_CM_PER_SEC = 100.0
     }
 
 }

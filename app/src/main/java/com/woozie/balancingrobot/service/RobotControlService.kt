@@ -30,6 +30,7 @@ import com.woozie.balancingrobot.domain.control.WheelVelocityFeedback
 import com.woozie.balancingrobot.domain.control.normalizeWheelVelocity
 import com.woozie.balancingrobot.domain.gamepad.DriveCommandSource
 import com.woozie.balancingrobot.domain.gamepad.DriveSetpointArbiter
+import com.woozie.balancingrobot.domain.gamepad.GamepadConfig
 import com.woozie.balancingrobot.domain.gamepad.GamepadDriveCommand
 import com.woozie.balancingrobot.domain.gamepad.GamepadNeutralReason
 import com.woozie.balancingrobot.domain.gamepad.ParameterDriveSetpoint
@@ -1154,6 +1155,7 @@ class RobotControlService : Service() {
                 lastSequence = driveSetpoint.sequence,
                 deadmanHeld = driveSetpoint.deadmanHeld,
                 precisionHeld = driveSetpoint.precisionHeld,
+                turboHeld = driveSetpoint.turboHeld,
             ))
         }
         val estimate = imuRuntime?.estimate(
@@ -1194,6 +1196,11 @@ class RobotControlService : Service() {
         val speedOutput = updateSpeedLoop(
             receivedTimestampNs,
             driveSetpoint.speedTargetCmPerSec,
+            targetLimitCmPerSec = if (driveSetpoint.turboHeld) {
+                GamepadConfig.MAX_TURBO_SPEED_CM_PER_SEC
+            } else {
+                activeConfig.speedTargetLimitCmPerSec
+            },
             estimate.gyroRateDegPerSec,
             driveSetpoint.yawTargetDegPerSec,
             estimate.yawRateDegPerSec,
@@ -1285,6 +1292,7 @@ class RobotControlService : Service() {
     private fun updateSpeedLoop(
         nowNs: Long,
         targetCmPerSec: Double = activeConfig.speedTargetCmPerSec,
+        targetLimitCmPerSec: Double = activeConfig.speedTargetLimitCmPerSec,
         pitchRateDegPerSec: Double = 0.0,
         yawTargetDegPerSec: Double = activeConfig.yawTargetDegPerSec,
         yawRateDegPerSec: Double = 0.0,
@@ -1316,13 +1324,14 @@ class RobotControlService : Service() {
             )
         } else null
         val output = velocityOuterLoop.step(
-            nowNs,
-            feedback,
-            targetCmPerSec,
-            pitchRateDegPerSec,
-            yawTargetDegPerSec,
-            yawRateDegPerSec,
-            pitchAngleDeg,
+            nowNs = nowNs,
+            feedback = feedback,
+            targetCmPerSec = targetCmPerSec,
+            targetLimitCmPerSec = targetLimitCmPerSec,
+            pitchRateDegPerSec = pitchRateDegPerSec,
+            yawTargetDegPerSec = yawTargetDegPerSec,
+            yawRateDegPerSec = yawRateDegPerSec,
+            pitchAngleDeg = pitchAngleDeg,
         )
         if (output.updated) {
             speedLoopActualRateHz = speedLoopRateMeter.record(nowNs).frequencyHz

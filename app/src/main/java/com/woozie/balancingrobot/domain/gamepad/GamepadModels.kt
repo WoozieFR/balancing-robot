@@ -13,7 +13,11 @@ data class GamepadConfig(
     val yawSign: Int = 1,
     val heartbeatHz: Int = 50,
     val commandTimeoutMs: Long = 250L,
-)
+) {
+    companion object {
+        const val MAX_TURBO_SPEED_CM_PER_SEC = 100.0
+    }
+}
 
 enum class DriveCommandSource { PARAMETERS, GAMEPAD, NEUTRAL }
 
@@ -53,6 +57,7 @@ data class EffectiveDriveSetpoint(
     val sequence: Long? = null,
     val deadmanHeld: Boolean = false,
     val precisionHeld: Boolean = false,
+    val turboHeld: Boolean = false,
 )
 
 data class GamepadAxisOutput(

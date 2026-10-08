@@ -31,9 +31,9 @@ object RobotConfigValidator {
                 error("kd", "must be finite and in [0, 2000]")
             }
             if (!config.speedTargetLimitCmPerSec.isFinite() ||
-                config.speedTargetLimitCmPerSec !in 1.0..20.0
+                config.speedTargetLimitCmPerSec !in 1.0..100.0
             ) {
-                error("speedTargetLimitCmPerSec", "must be finite and in [1, 20]")
+                error("speedTargetLimitCmPerSec", "must be finite and in [1, 100]")
             }
             if (!config.speedTargetCmPerSec.isFinite() ||
                 kotlin.math.abs(config.speedTargetCmPerSec) > config.speedTargetLimitCmPerSec

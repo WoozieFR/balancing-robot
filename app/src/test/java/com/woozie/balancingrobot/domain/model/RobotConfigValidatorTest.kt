@@ -40,6 +40,13 @@ class RobotConfigValidatorTest {
     }
 
     @Test
+    fun acceptsAConfiguredSpeedLimitUpToOneHundredCmPerSecond() {
+        val result = RobotConfigValidator.validate(RobotConfig(speedTargetLimitCmPerSec = 100.0))
+
+        assertTrue(result.isValid)
+    }
+
+    @Test
     fun rejectsInconsistentOrUnsafeSpeedLoopParameters() {
         val result = RobotConfigValidator.validate(RobotConfig(
             speedTargetCmPerSec = 11.0,

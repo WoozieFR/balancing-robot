@@ -1248,7 +1248,7 @@ private fun BalanceTuningCard(
     ParameterSlider(
         "Limite consigne vitesse (cm/s)",
         draft.speedTargetLimitCmPerSec,
-        1f..20f,
+        1f..100f,
         189,
         liveEditable,
     ) { value ->

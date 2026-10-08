@@ -112,7 +112,7 @@ object RobotSettings {
                 yawSign = (preferences[gamepadYawSignKey] ?: defaults.yawSign).let { if (it < 0) -1 else 1 },
             ).takeIf {
                 it.maxSpeedCmPerSec in 0.0..100.0 &&
-                    it.turboMaxSpeedCmPerSec in 0.0..200.0 &&
+                    it.turboMaxSpeedCmPerSec in 0.0..GamepadConfig.MAX_TURBO_SPEED_CM_PER_SEC &&
                     it.maxYawDegPerSec in 0.0..720.0 &&
                     it.deadZone in 0.0..0.95 &&
                     it.responseExponent in 1.0..3.0 &&
@@ -122,7 +122,7 @@ object RobotSettings {
 
     suspend fun saveGamepadConfig(context: Context, config: GamepadConfig) {
         require(config.maxSpeedCmPerSec in 0.0..100.0)
-        require(config.turboMaxSpeedCmPerSec in 0.0..200.0)
+        require(config.turboMaxSpeedCmPerSec in 0.0..GamepadConfig.MAX_TURBO_SPEED_CM_PER_SEC)
         require(config.maxYawDegPerSec in 0.0..720.0)
         require(config.deadZone in 0.0..0.95)
         require(config.responseExponent in 1.0..3.0)

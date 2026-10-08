@@ -40,6 +40,26 @@ class VelocityOuterLoopTest {
     }
 
     @Test
+    fun turboOnlyExternalLimitCanReachOneHundredWithoutChangingDefaultLimit() {
+        val loop = VelocityOuterLoop(config())
+        val normal = loop.step(
+            nowNs = 1_000_000_000L,
+            feedback = feedback(1, 0, 0, 995_000_000L),
+            targetCmPerSec = 100.0,
+        )
+        assertEquals(10.0, normal.targetCmPerSec, 1e-9)
+
+        loop.reset()
+        val turbo = loop.step(
+            nowNs = 1_000_000_000L,
+            feedback = feedback(1, 0, 0, 995_000_000L),
+            targetCmPerSec = 100.0,
+            targetLimitCmPerSec = 100.0,
+        )
+        assertEquals(100.0, turbo.targetCmPerSec, 1e-9)
+    }
+
+    @Test
     fun exponentialFilterUpdatesOnlyForANewPair() {
         val loop = VelocityOuterLoop(config(speedFilterAlpha = 0.5, speedLoopRateHz = 100))
         val first = loop.step(1_000_000_000L, feedback(1, 1_000, 1_000, 995_000_000L))

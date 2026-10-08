@@ -88,6 +88,7 @@ class DriveSetpointArbiter(
             sequence = command.sequence,
             deadmanHeld = true,
             precisionHeld = command.precisionHeld,
+            turboHeld = command.turboHeld,
         )
     }
 
@@ -116,4 +117,3 @@ class DriveSetpointArbiter(
         precisionHeld = command?.precisionHeld == true,
     )
 }
-
