@@ -3,6 +3,8 @@ package com.woozie.balancingrobot.domain.gamepad
 /** Persistent limits and shaping parameters for a paired gamepad. */
 data class GamepadConfig(
     val maxSpeedCmPerSec: Double = 5.0,
+    /** Speed limit used while the DualShock R2 modifier is held. */
+    val turboMaxSpeedCmPerSec: Double = 25.0,
     val maxYawDegPerSec: Double = 90.0,
     val deadZone: Double = 0.12,
     val responseExponent: Double = 1.5,
@@ -39,6 +41,7 @@ data class GamepadDriveCommand(
     val yawTargetDegPerSec: Double,
     val deadmanHeld: Boolean,
     val precisionHeld: Boolean,
+    val turboHeld: Boolean = false,
 )
 
 data class EffectiveDriveSetpoint(
@@ -56,4 +59,3 @@ data class GamepadAxisOutput(
     val normalized: Double,
     val target: Double,
 )
-

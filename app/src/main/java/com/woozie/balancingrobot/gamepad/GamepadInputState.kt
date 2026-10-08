@@ -7,7 +7,7 @@ data class GamepadInputState(
     val yawAxis: Float = 0f,
     val deadmanHeld: Boolean = false,
     val precisionHeld: Boolean = false,
+    val turboHeld: Boolean = false,
     val focused: Boolean = false,
     val available: Boolean = false,
 )
-

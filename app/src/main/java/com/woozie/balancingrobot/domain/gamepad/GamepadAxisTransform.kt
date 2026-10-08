@@ -31,6 +31,7 @@ fun gamepadSetpoints(
     speedHardwareFlat: Float = 0f,
     yawHardwareFlat: Float = 0f,
     precisionHeld: Boolean = false,
+    turboHeld: Boolean = false,
 ): Pair<GamepadAxisOutput, GamepadAxisOutput> {
     val precision = if (precisionHeld) config.precisionScale else 1.0
     val speed = transformGamepadAxis(
@@ -47,7 +48,7 @@ fun gamepadSetpoints(
         responseExponent = config.responseExponent,
         sign = config.yawSign,
     )
-    return GamepadAxisOutput(speed, speed * config.maxSpeedCmPerSec * precision) to
+    val selectedSpeedLimit = if (turboHeld) config.turboMaxSpeedCmPerSec else config.maxSpeedCmPerSec
+    return GamepadAxisOutput(speed, speed * selectedSpeedLimit * precision) to
         GamepadAxisOutput(yaw, yaw * config.maxYawDegPerSec * precision)
 }
-

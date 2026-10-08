@@ -174,6 +174,7 @@ const renderDiagnostics = (diagnostics) => {
   text('gamepad-reason', diagnostics.gamepadNeutralReason || '—');
   text('gamepad-targets', `${number(diagnostics.gamepadEffectiveSpeedTargetCmPerSec, ' cm/s')} / ${number(diagnostics.gamepadEffectiveYawTargetDegPerSec, ' °/s')}`);
   text('gamepad-deadman', diagnostics.gamepadDeadmanHeld ? 'tenu' : 'relâché');
+  text('gamepad-turbo', diagnostics.gamepadTurboHeld ? 'actif' : 'relâché');
 
   text('motor-state', `${armState} · ${diagnostics.motorConnected ? 'USB connecté' : 'USB arrêté'}`);
   text('motor-command', `${diagnostics.motorCommand ?? 0} · deadman ${diagnostics.motorDeadmanHeld ? 'tenu' : 'relâché'}`);

@@ -4,7 +4,9 @@ import android.Manifest
 import android.annotation.SuppressLint
 import android.content.ComponentName
 import android.content.Context
+import android.content.BroadcastReceiver
 import android.content.Intent
+import android.content.IntentFilter
 import android.content.ServiceConnection
 import android.content.pm.PackageManager
 import android.os.Build
@@ -14,6 +16,7 @@ import android.os.SystemClock
 import android.view.KeyEvent
 import android.view.MotionEvent
 import android.view.WindowManager
+import android.hardware.usb.UsbManager
 import androidx.activity.ComponentActivity
 import androidx.activity.compose.setContent
 import androidx.activity.result.contract.ActivityResultContracts
@@ -108,8 +111,27 @@ class MainActivity : ComponentActivity() {
     private var robotConfigSaveJob: Job? = null
     private var usbDevices: List<UsbSerialDeviceInfo> by mutableStateOf(emptyList())
     private var usbScanError: String? by mutableStateOf(null)
+    private var pendingAutoInitializeDeviceId: Int? = null
     private val usbDetector by lazy { AndroidUsbDeviceDetector(applicationContext) }
     private val gamepadDetector by lazy { AndroidGamepadDetector(applicationContext) }
+    private val usbPermissionReceiver = object : BroadcastReceiver() {
+        override fun onReceive(context: Context?, intent: Intent?) {
+            if (intent?.action != com.woozie.balancingrobot.motor.AndroidUsbDeviceDetector.ACTION_USB_PERMISSION) return
+            val deviceId = pendingAutoInitializeDeviceId
+            pendingAutoInitializeDeviceId = null
+            if (deviceId == null) return
+            val granted = intent.getBooleanExtra(UsbManager.EXTRA_PERMISSION_GRANTED, false)
+            if (granted) {
+                lifecycleScope.launch {
+                    delay(250)
+                    refreshUsbDevices()
+                    startAutomaticHardwareInitialization(deviceId)
+                }
+            } else {
+                usbScanError = "Autorisation USB refusée : initialisation automatique annulée"
+            }
+        }
+    }
     private val gamepadDeviceListener = object : android.hardware.input.InputManager.InputDeviceListener {
         override fun onInputDeviceAdded(deviceId: Int) = refreshGamepadDevices()
         override fun onInputDeviceRemoved(deviceId: Int) {
@@ -154,6 +176,12 @@ class MainActivity : ComponentActivity() {
             robotConfig = RobotSettings.robotConfig(this@MainActivity).first()
             gamepadConfig = RobotSettings.gamepadConfig(this@MainActivity).first()
         }
+        ContextCompat.registerReceiver(
+            this,
+            usbPermissionReceiver,
+            IntentFilter(AndroidUsbDeviceDetector.ACTION_USB_PERMISSION),
+            ContextCompat.RECEIVER_NOT_EXPORTED,
+        )
 
         setContent {
             var state by remember { mutableStateOf(RobotServiceState()) }
@@ -189,6 +217,7 @@ class MainActivity : ComponentActivity() {
                         usbScanError = usbScanError,
                         onRefreshUsb = ::refreshUsbDevices,
                         onRequestUsbPermission = ::requestUsbPermission,
+                        onAutoInitializeMotors = ::autoInitializeMotors,
                         onStart = { startRobotService(webPortText) },
                         onStop = ::stopRobotService,
                         onExportLog = ::exportLog,
@@ -276,6 +305,10 @@ class MainActivity : ComponentActivity() {
                 service?.emergencyDisarmFromGamepad()
                 return true
             }
+            if (AndroidGamepadMapper.isBalanceArm(event)) {
+                service?.armBalanceFromGamepad()
+                return true
+            }
             val down = event.action == KeyEvent.ACTION_DOWN
             gamepadInput = AndroidGamepadMapper.updateKey(gamepadInput, event, down)
             if (gamepadModeEnabled) startGamepadHeartbeat()
@@ -317,6 +350,7 @@ class MainActivity : ComponentActivity() {
                         gamepadInput.yawAxis,
                         gamepadConfig,
                         precisionHeld = gamepadInput.precisionHeld,
+                        turboHeld = gamepadInput.turboHeld,
                     )
                     service?.submitGamepadCommand(GamepadDriveCommand(
                         deviceId = deviceId,
@@ -326,6 +360,7 @@ class MainActivity : ComponentActivity() {
                         yawTargetDegPerSec = yaw.target,
                         deadmanHeld = gamepadInput.deadmanHeld,
                         precisionHeld = gamepadInput.precisionHeld,
+                        turboHeld = gamepadInput.turboHeld,
                     ))
                 }
                 delay((1000L / gamepadConfig.heartbeatHz.coerceIn(20, 100)).coerceAtLeast(5L))
@@ -447,6 +482,45 @@ class MainActivity : ComponentActivity() {
             notificationPermission.launch(Manifest.permission.POST_NOTIFICATIONS)
         }
     }
+
+    private fun autoInitializeMotors() {
+        if (!bound || service == null) {
+            usbScanError = "Démarrez le service avant l'initialisation automatique"
+            return
+        }
+        lifecycleScope.launch {
+            val devices = withContext(Dispatchers.IO) { runCatching { usbDetector.enumerate() }.getOrNull().orEmpty() }
+            val device = devices.firstOrNull { it.isCh340 } ?: devices.firstOrNull()
+            if (device == null) {
+                usbDevices = emptyList()
+                usbScanError = "Aucun adaptateur USB série détecté"
+                return@launch
+            }
+            usbDevices = devices
+            if (device.permissionGranted) {
+                startAutomaticHardwareInitialization(device.deviceId)
+            } else {
+                pendingAutoInitializeDeviceId = device.deviceId
+                usbScanError = "Autorisation Android requise une seule fois pour poursuivre automatiquement"
+                usbDetector.requestPermission(device.deviceId)
+            }
+        }
+    }
+
+    private fun startAutomaticHardwareInitialization(deviceId: Int) {
+        service?.autoInitializeMotors(deviceId)
+        refreshGamepadDevices()
+        val gamepadId = selectedGamepadDeviceId ?: gamepadDevices.firstOrNull()?.id
+        if (gamepadId != null) {
+            selectedGamepadDeviceId = gamepadId
+            setGamepadMode(true)
+        }
+    }
+
+    override fun onDestroy() {
+        runCatching { unregisterReceiver(usbPermissionReceiver) }
+        super.onDestroy()
+    }
 }
 
 @Composable
@@ -465,6 +539,7 @@ private fun Lot2Screen(
     usbScanError: String?,
     onRefreshUsb: () -> Unit,
     onRequestUsbPermission: (Int) -> Unit,
+    onAutoInitializeMotors: () -> Unit,
     onStart: () -> Unit,
     onStop: () -> Unit,
     onExportLog: () -> Unit,
@@ -576,6 +651,18 @@ private fun Lot2Screen(
         ) {
             Text("Actualiser les périphériques")
         }
+        Spacer(Modifier.height(8.dp))
+        Button(
+            onClick = onAutoInitializeMotors,
+            enabled = state.running,
+            modifier = Modifier.fillMaxWidth(),
+        ) {
+            Text("Initialiser automatiquement USB + moteurs")
+        }
+        Text(
+            "Sélection CH340, demande d'autorisation si nécessaire, ouverture du port et application de la configuration connue. Aucun scan ni armement automatique.",
+            style = MaterialTheme.typography.bodySmall,
+        )
         usbScanError?.let { error ->
             Spacer(Modifier.height(8.dp))
             Text(error, color = MaterialTheme.colorScheme.error)
@@ -979,7 +1066,7 @@ private fun GamepadCard(
     Spacer(Modifier.height(8.dp))
     Text(
         "La manette doit être appairée dans Android. R1 est le deadman, L1 réduit la sensibilité, " +
-            "et Cercle désarme immédiatement. La manette ne peut pas armer le robot.",
+            "R2 active le mode rapide et Carré demande l'armement équilibrage. Cercle désarme immédiatement.",
         style = MaterialTheme.typography.bodySmall,
     )
     Spacer(Modifier.height(8.dp))
@@ -1013,6 +1100,9 @@ private fun GamepadCard(
     ParameterSlider("Vitesse maximale (cm/s)", config.maxSpeedCmPerSec, 0f..20f, 99, true) {
         onConfigChange(config.copy(maxSpeedCmPerSec = it.toDouble()))
     }
+    ParameterSlider("Vitesse rapide R2 (cm/s)", config.turboMaxSpeedCmPerSec, 0f..100f, 199, true) {
+        onConfigChange(config.copy(turboMaxSpeedCmPerSec = it.toDouble()))
+    }
     ParameterSlider("Rotation maximale (°/s)", config.maxYawDegPerSec, 0f..360f, 119, true) {
         onConfigChange(config.copy(maxYawDegPerSec = it.toDouble()))
     }
@@ -1037,7 +1127,8 @@ private fun GamepadCard(
     Text(
         "Axes : stick gauche vertical = ${number(state.effectiveSpeedTargetCmPerSec)} cm/s · " +
             "stick droit horizontal = ${number(state.effectiveYawTargetDegPerSec)} °/s · " +
-            "deadman ${if (state.deadmanHeld) "tenu" else "relâché"}",
+            "deadman ${if (state.deadmanHeld) "tenu" else "relâché"} · " +
+            "R2 ${if (state.turboHeld) "actif" else "relâché"}",
         style = MaterialTheme.typography.bodySmall,
     )
 }

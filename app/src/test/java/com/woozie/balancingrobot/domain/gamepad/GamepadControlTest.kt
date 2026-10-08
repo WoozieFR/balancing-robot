@@ -23,6 +23,15 @@ class GamepadControlTest {
     }
 
     @Test
+    fun turboModifierUsesTheSeparateSpeedLimit() {
+        val config = GamepadConfig(maxSpeedCmPerSec = 5.0, turboMaxSpeedCmPerSec = 30.0, speedSign = 1)
+        val (normal, _) = gamepadSetpoints(1f, 0f, config)
+        val (turbo, _) = gamepadSetpoints(1f, 0f, config, turboHeld = true)
+        assertEquals(5.0, normal.target, 1e-9)
+        assertEquals(30.0, turbo.target, 1e-9)
+    }
+
+    @Test
     fun arbiterKeepsDeadmanAndTimesOut() {
         val arbiter = DriveSetpointArbiter(timeoutMs = 250)
         arbiter.enable(7)
@@ -44,4 +53,3 @@ class GamepadControlTest {
         assertEquals(4.0, output.speedTargetCmPerSec, 0.0)
     }
 }
-

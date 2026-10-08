@@ -15,6 +15,7 @@ data class GamepadDiagnosticState(
     val lastCommandAgeMs: Double? = null,
     val deadmanHeld: Boolean = false,
     val precisionHeld: Boolean = false,
+    val turboHeld: Boolean = false,
     val rawSpeedAxis: Float = 0f,
     val rawYawAxis: Float = 0f,
     val normalizedSpeed: Double = 0.0,
@@ -23,4 +24,3 @@ data class GamepadDiagnosticState(
     val effectiveYawTargetDegPerSec: Double = 0.0,
     val lastEvent: String? = null,
 )
-

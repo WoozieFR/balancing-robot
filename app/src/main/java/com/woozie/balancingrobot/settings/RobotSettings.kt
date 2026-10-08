@@ -69,6 +69,7 @@ object RobotSettings {
     private val manualTimeoutKey = intPreferencesKey("manual_timeout_ms")
     private val inhibitSafetyAutoDisarmKey = booleanPreferencesKey("inhibit_safety_auto_disarm")
     private val gamepadMaxSpeedKey = doublePreferencesKey("gamepad_max_speed_cmps")
+    private val gamepadTurboMaxSpeedKey = doublePreferencesKey("gamepad_turbo_max_speed_cmps")
     private val gamepadMaxYawKey = doublePreferencesKey("gamepad_max_yaw_dps")
     private val gamepadDeadZoneKey = doublePreferencesKey("gamepad_dead_zone")
     private val gamepadExponentKey = doublePreferencesKey("gamepad_response_exponent")
@@ -102,6 +103,7 @@ object RobotSettings {
             val defaults = GamepadConfig()
             GamepadConfig(
                 maxSpeedCmPerSec = preferences[gamepadMaxSpeedKey] ?: defaults.maxSpeedCmPerSec,
+                turboMaxSpeedCmPerSec = preferences[gamepadTurboMaxSpeedKey] ?: defaults.turboMaxSpeedCmPerSec,
                 maxYawDegPerSec = preferences[gamepadMaxYawKey] ?: defaults.maxYawDegPerSec,
                 deadZone = preferences[gamepadDeadZoneKey] ?: defaults.deadZone,
                 responseExponent = preferences[gamepadExponentKey] ?: defaults.responseExponent,
@@ -110,6 +112,7 @@ object RobotSettings {
                 yawSign = (preferences[gamepadYawSignKey] ?: defaults.yawSign).let { if (it < 0) -1 else 1 },
             ).takeIf {
                 it.maxSpeedCmPerSec in 0.0..100.0 &&
+                    it.turboMaxSpeedCmPerSec in 0.0..200.0 &&
                     it.maxYawDegPerSec in 0.0..720.0 &&
                     it.deadZone in 0.0..0.95 &&
                     it.responseExponent in 1.0..3.0 &&
@@ -119,6 +122,7 @@ object RobotSettings {
 
     suspend fun saveGamepadConfig(context: Context, config: GamepadConfig) {
         require(config.maxSpeedCmPerSec in 0.0..100.0)
+        require(config.turboMaxSpeedCmPerSec in 0.0..200.0)
         require(config.maxYawDegPerSec in 0.0..720.0)
         require(config.deadZone in 0.0..0.95)
         require(config.responseExponent in 1.0..3.0)
@@ -127,6 +131,7 @@ object RobotSettings {
         require(config.yawSign == -1 || config.yawSign == 1)
         context.robotSettingsDataStore.edit { preferences ->
             preferences[gamepadMaxSpeedKey] = config.maxSpeedCmPerSec
+            preferences[gamepadTurboMaxSpeedKey] = config.turboMaxSpeedCmPerSec
             preferences[gamepadMaxYawKey] = config.maxYawDegPerSec
             preferences[gamepadDeadZoneKey] = config.deadZone
             preferences[gamepadExponentKey] = config.responseExponent

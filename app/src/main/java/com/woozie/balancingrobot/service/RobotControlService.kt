@@ -437,6 +437,7 @@ class RobotControlService : Service() {
                 effectiveYawTargetDegPerSec = 0.0,
                 deadmanHeld = false,
                 precisionHeld = false,
+                turboHeld = false,
                 lastEvent = "Mode manette désactivé : reprise verrouillée jusqu'à un nouveau réglage",
             )) }
             return true
@@ -469,6 +470,7 @@ class RobotControlService : Service() {
                 lastCommandAgeMs = 0.0,
                 deadmanHeld = command.deadmanHeld,
                 precisionHeld = command.precisionHeld,
+                turboHeld = command.turboHeld,
                 effectiveSpeedTargetCmPerSec = if (command.deadmanHeld) command.speedTargetCmPerSec else 0.0,
                 effectiveYawTargetDegPerSec = if (command.deadmanHeld) command.yawTargetDegPerSec else 0.0,
                 lastEvent = if (command.deadmanHeld) "Commande manette reçue" else "Deadman relâché",
@@ -487,6 +489,7 @@ class RobotControlService : Service() {
             effectiveYawTargetDegPerSec = 0.0,
             deadmanHeld = false,
             precisionHeld = false,
+            turboHeld = false,
             lastEvent = "Entrée manette neutralisée : ${reason.name}",
         )) }
     }
@@ -499,6 +502,7 @@ class RobotControlService : Service() {
             neutralReason = if (focused) it.gamepad.neutralReason else GamepadNeutralReason.FOCUS_LOST,
             effectiveSpeedTargetCmPerSec = if (focused) it.gamepad.effectiveSpeedTargetCmPerSec else 0.0,
             effectiveYawTargetDegPerSec = if (focused) it.gamepad.effectiveYawTargetDegPerSec else 0.0,
+            turboHeld = if (focused) it.gamepad.turboHeld else false,
         )) }
     }
 
@@ -506,6 +510,77 @@ class RobotControlService : Service() {
         disarmBalance()
         disarmManual()
         _state.update { it.copy(gamepad = it.gamepad.copy(lastEvent = "Désarmement d'urgence demandé par la manette")) }
+    }
+
+    /** Square is an explicit balance-arm action, subject to the same live prerequisites as the UI. */
+    fun armBalanceFromGamepad(): Boolean {
+        val current = _state.value
+        if (!current.gamepad.modeEnabled || !current.gamepad.focused) return false
+        armBalance(safeTestConfirmed = true)
+        _state.update { it.copy(gamepad = it.gamepad.copy(lastEvent = "Armement équilibrage demandé par Carré")) }
+        return true
+    }
+
+    /**
+     * Best-effort Lot 4 setup for a known-ID motor group. It deliberately does
+     * not scan, enable torque, or arm anything: only USB open + PWM/velocity
+     * configuration are performed. USB permission must already be granted by
+     * Android before this method can open the device.
+     */
+    fun autoInitializeMotors(deviceId: Int) {
+        if (!_state.value.running) return
+        val current = _state.value.motors
+        if (current.armState == MotorArmState.MANUAL_ARMED ||
+            current.armState == MotorArmState.BALANCE_ARMED ||
+            current.armState == MotorArmState.FAULT_LATCHED
+        ) return
+        _state.update { it.copy(motors = it.motors.copy(
+            connectInProgress = true,
+            errorMessage = null,
+            lastAction = "Initialisation automatique en cours…",
+        )) }
+        serverScope.launch(Dispatchers.IO) {
+            val result = runCatching {
+                closeMotorSession()
+                val port = AndroidUsbSerialTransport(applicationContext).open(deviceId)
+                motorPort = port
+                motorBus = FeetechBus(port)
+                motorBus!!.configureControlMode(
+                    _state.value.motors.requiredIds,
+                    _state.value.motors.controlMode,
+                    _state.value.motors.torqueLimit,
+                )
+            }
+            _state.update { state ->
+                state.copy(motors = result.fold(
+                    onSuccess = {
+                        state.motors.copy(
+                            connectInProgress = false,
+                            connected = true,
+                            connectedDeviceId = deviceId,
+                            connectedDeviceName = "USB device $deviceId",
+                            configured = true,
+                            qualified = true,
+                            scannedIds = emptyList(),
+                            armState = MotorArmState.READY,
+                            lastAction = "Initialisation automatique terminée · armement encore requis",
+                            errorMessage = null,
+                        )
+                    },
+                    onFailure = { error ->
+                        closeMotorSession()
+                        state.motors.copy(
+                            connectInProgress = false,
+                            connected = false,
+                            configured = false,
+                            qualified = false,
+                            errorMessage = "Initialisation automatique impossible (${error.message ?: error.javaClass.simpleName})",
+                        )
+                    },
+                ))
+            }
+            if (result.isSuccess) startMotorScheduler()
+        }
     }
 
     fun armBalance(safeTestConfirmed: Boolean) {
@@ -1443,6 +1518,7 @@ class RobotControlService : Service() {
             gamepad.lastCommandAgeMs?.let { put("gamepadCommandAgeMs", it) }
             put("gamepadDeadmanHeld", gamepad.deadmanHeld)
             put("gamepadPrecisionHeld", gamepad.precisionHeld)
+            put("gamepadTurboHeld", gamepad.turboHeld)
             put("gamepadEffectiveSpeedTargetCmPerSec", gamepad.effectiveSpeedTargetCmPerSec)
             put("gamepadEffectiveYawTargetDegPerSec", gamepad.effectiveYawTargetDegPerSec)
             gamepad.lastEvent?.let { put("gamepadLastEvent", it) }

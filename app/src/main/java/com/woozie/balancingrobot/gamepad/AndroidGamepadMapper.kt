@@ -21,11 +21,18 @@ object AndroidGamepadMapper {
         } else {
             MotionEvent.AXIS_RX
         }
+        val triggerAxis = when {
+            device.getMotionRange(MotionEvent.AXIS_RTRIGGER, event.source) != null -> MotionEvent.AXIS_RTRIGGER
+            device.getMotionRange(MotionEvent.AXIS_BRAKE, event.source) != null -> MotionEvent.AXIS_BRAKE
+            else -> null
+        }
+        val triggerHeld = triggerAxis?.let { event.getAxisValue(it) >= R2_THRESHOLD } ?: current.turboHeld
         return current.copy(
             deviceId = event.deviceId,
             deviceName = device.name,
             speedAxis = event.getAxisValue(MotionEvent.AXIS_Y),
             yawAxis = event.getAxisValue(rightAxis),
+            turboHeld = triggerHeld,
             available = true,
         )
     }
@@ -46,6 +53,12 @@ object AndroidGamepadMapper {
                 precisionHeld = down,
                 available = true,
             )
+            KeyEvent.KEYCODE_BUTTON_R2 -> current.copy(
+                deviceId = event.deviceId,
+                deviceName = device?.name,
+                turboHeld = down,
+                available = true,
+            )
             else -> current.copy(
                 deviceId = event.deviceId,
                 deviceName = device?.name,
@@ -56,5 +69,9 @@ object AndroidGamepadMapper {
 
     fun isEmergencyDisarm(event: KeyEvent): Boolean =
         event.keyCode == KeyEvent.KEYCODE_BUTTON_B && event.action == KeyEvent.ACTION_DOWN
-}
 
+    fun isBalanceArm(event: KeyEvent): Boolean =
+        event.keyCode == KeyEvent.KEYCODE_BUTTON_X && event.action == KeyEvent.ACTION_DOWN
+
+    private const val R2_THRESHOLD = 0.5f
+}
